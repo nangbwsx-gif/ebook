@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-900 text-gray-100;
+  }
+}
+
+@layer components {
+  .bookshelf-container {
+    @apply min-h-screen;
+  }
+}
+
+/* 书架木板样式 */
+.shelf-board {
+  background: linear-gradient(180deg, #5D3A1A 0%, #4A2E15 30%, #3D2510 60%, #4A2E15 100%);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* 书籍封面悬停效果 */
+.book-cover {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.book-cover:hover {
+  transform: translateY(-8px) rotateY(-5deg);
+  box-shadow: -8px 8px 20px rgba(0,0,0,0.6);
+}
+
+/* 翻页动画关键帧 */
+@keyframes pageFlip {
+  0% { transform: rotateY(0deg); }
+  100% { transform: rotateY(-180deg); }
+}
+
+/* 加载动画 */
+.loading-dot {
+  animation: loadingDot 1.4s infinite ease-in-out both;
+}
+.loading-dot:nth-child(1) { animation-delay: -0.32s; }
+.loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes loadingDot {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}

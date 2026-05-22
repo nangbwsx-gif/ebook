@@ -1,0 +1,19 @@
+# Zeabur 部署配置
+# 文档: https://zeabur.com/docs
+
+version: 1
+
+services:
+  app:
+    build:
+      context: .
+    port: 3000
+    volumes:
+      - name: sqlite-data
+        mountPath: /app/prisma
+      - name: uploads
+        mountPath: /app/public/uploads
+    env:
+      DATABASE_URL: file:/app/prisma/dev.db
+      NEXTAUTH_SECRET: change-me-to-a-random-string-please
+      NEXTAUTH_URL: https://${ZEABUR_DOMAIN}
