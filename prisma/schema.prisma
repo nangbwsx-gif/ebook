@@ -8,10 +8,14 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique
+  id        String     @id @default(uuid())
+  username  String     @unique
   password  String
-  createdAt DateTime @default(now())
+  slug      String     @unique
+  role      String     @default("USER")
+  createdAt DateTime   @default(now())
+  books     Book[]
+  categories Category[]
 }
 
 model Book {
@@ -23,12 +27,18 @@ model Book {
   pages       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
 }
 
 model Category {
-  id    String  @id @default(uuid())
-  name  String  @unique
-  books Book[]
+  id     String @id @default(uuid())
+  name   String
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  books  Book[]
+
+  @@unique([name, userId])
 }
