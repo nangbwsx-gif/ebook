@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
-import { unlink } from 'fs/promises'
+import { unlink, writeFile, mkdir } from 'fs/promises'
 import path from 'path'
 
 export async function GET(
@@ -29,9 +29,27 @@ export async function PATCH(
   }
 
   const data = await request.json()
+
+  // 更新封面图片
+  if (data.coverData) {
+    const coverDir = path.join(process.cwd(), 'public', 'uploads', 'covers')
+    await mkdir(coverDir, { recursive: true })
+    const coverFileName = `${params.id}.jpg`
+    const coverPath = path.join(coverDir, coverFileName)
+    const base64Data = data.coverData.replace(/^data:image\/\w+;base64,/, '')
+    await writeFile(coverPath, Buffer.from(base64Data, 'base64'))
+    data.coverUrl = `/uploads/covers/${coverFileName}`
+  }
+
+  const updateFields: Record<string, unknown> = {}
+  if (data.title !== undefined) updateFields.title = data.title
+  if (data.description !== undefined) updateFields.description = data.description
+  if (data.pages !== undefined) updateFields.pages = data.pages
+  if (data.coverUrl !== undefined) updateFields.coverUrl = data.coverUrl
+
   const updated = await prisma.book.update({
     where: { id: params.id },
-    data: { title: data.title, description: data.description, pages: data.pages },
+    data: updateFields,
   })
   return NextResponse.json(updated)
 }

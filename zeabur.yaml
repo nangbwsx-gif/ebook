@@ -12,5 +12,3 @@ services:
         mountPath: /app/public/uploads
     env:
       DATABASE_URL: file:/app/prisma/dev.db
-      NEXTAUTH_SECRET: change-me-to-a-random-string-please
-      NEXTAUTH_URL: https://${ZEABUR_DOMAIN}

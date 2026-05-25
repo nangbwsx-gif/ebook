@@ -1,14 +1,16 @@
 import Link from 'next/link'
+import PDFCover from './PDFCover'
 
 interface BookCoverProps {
   id: string
   title: string
   coverUrl: string | null
+  pdfUrl?: string
   pages: number
   updatedAt: Date
 }
 
-export default function BookCover({ id, title, coverUrl, pages, updatedAt }: BookCoverProps) {
+export default function BookCover({ id, title, coverUrl, pdfUrl, pages, updatedAt }: BookCoverProps) {
   const timeAgo = getTimeAgo(new Date(updatedAt))
 
   return (
@@ -27,6 +29,8 @@ export default function BookCover({ id, title, coverUrl, pages, updatedAt }: Boo
                 className="w-full h-full object-cover"
                 loading="lazy"
               />
+            ) : pdfUrl ? (
+              <PDFCover pdfUrl={pdfUrl} bookId={id} title={title} />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 to-indigo-900 p-4">
                 <svg className="w-12 h-12 text-blue-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

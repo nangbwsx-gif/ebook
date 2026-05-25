@@ -1,6 +1,12 @@
 import { prisma } from '@/lib/db'
 import PDFViewer from '@/components/PDFViewer'
 import Link from 'next/link'
+import { Metadata } from 'next'
+
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+  const book = await prisma.book.findUnique({ where: { id: params.id } })
+  return { title: book ? `${book.title} - 电子样册` : '样册未找到' }
+}
 
 export default async function BookPage({ params }: { params: { id: string } }) {
   const book = await prisma.book.findUnique({ where: { id: params.id } })
@@ -16,24 +22,25 @@ export default async function BookPage({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col">
+    <div className="min-h-screen bg-[#1a1a2e] flex flex-col">
       {/* 顶部导航 */}
-      <header className="bg-gray-900 border-b border-gray-800 px-4 h-14 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="text-gray-400 hover:text-white transition">
+      <header className="bg-gray-900/80 backdrop-blur-sm border-b border-gray-800/50 px-4 h-12
+                        flex items-center justify-between shrink-0 z-30">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/" className="text-gray-400 hover:text-white transition-colors shrink-0 p-1 -ml-1">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <h1 className="text-white font-medium truncate max-w-md">{book.title}</h1>
+          <h1 className="text-white font-medium text-sm truncate">{book.title}</h1>
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-400">
+        <div className="flex items-center gap-2 text-xs text-gray-500 shrink-0">
           <span>{book.pages} 页</span>
         </div>
       </header>
 
       {/* PDF 阅读器 */}
-      <div className="flex-1">
+      <div className="flex-1 -mt-px">
         <PDFViewer pdfUrl={book.pdfUrl} />
       </div>
     </div>
