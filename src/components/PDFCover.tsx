@@ -17,8 +17,7 @@ export default function PDFCover({ pdfUrl, bookId, title }: { pdfUrl: string; bo
     async function render() {
       try {
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
         const doc = await pdfjsLib.getDocument(pdfUrl).promise
         if (cancelled) return
