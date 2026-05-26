@@ -34,19 +34,12 @@ export default function Header({ showSlug }: { showSlug?: string }) {
           >
             关于我们
           </button>
-          {user ? (
+          {user && (
             <Link
               href="/dashboard"
               className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
             >
               进入管理
-            </Link>
-          ) : (
-            <Link
-              href="/admin/login"
-              className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-            >
-              管理后台
             </Link>
           )}
         </div>
