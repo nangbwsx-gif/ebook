@@ -71,6 +71,14 @@ export async function DELETE(
     await unlink(filePath)
   } catch { /* 文件可能不存在 */ }
 
+  // 清理封面文件
+  if (book.coverUrl) {
+    try {
+      const coverPath = path.join(process.cwd(), 'public', book.coverUrl)
+      await unlink(coverPath)
+    } catch { /* 封面文件可能不存在 */ }
+  }
+
   await prisma.book.delete({ where: { id: params.id } })
   return NextResponse.json({ success: true })
 }

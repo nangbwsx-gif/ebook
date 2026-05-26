@@ -2,23 +2,27 @@
 
 import { useState, useCallback } from 'react'
 
-export default function SearchBar() {
+export default function SearchBar({ onSearch }: { onSearch?: (query: string) => void }) {
   const [query, setQuery] = useState('')
 
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setQuery(value)
-    // 简单的客户端过滤
-    const books = document.querySelectorAll('[data-book-card]')
-    books.forEach((book) => {
-      const title = book.getAttribute('data-title')?.toLowerCase() || ''
-      if (title.includes(value.toLowerCase())) {
-        book.classList.remove('hidden')
-      } else {
-        book.classList.add('hidden')
-      }
-    })
-  }, [])
+    if (onSearch) {
+      onSearch(value)
+    } else {
+      // 兼容旧用法：直接操作 DOM
+      const books = document.querySelectorAll('[data-book-card]')
+      books.forEach((book) => {
+        const title = book.getAttribute('data-title')?.toLowerCase() || ''
+        if (title.includes(value.toLowerCase())) {
+          book.classList.remove('hidden')
+        } else {
+          book.classList.add('hidden')
+        }
+      })
+    }
+  }, [onSearch])
 
   return (
     <div className="py-8">

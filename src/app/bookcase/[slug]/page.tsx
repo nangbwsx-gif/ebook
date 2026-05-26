@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/db'
-import BookShelf from '@/components/BookShelf'
-import SearchBar from '@/components/SearchBar'
+import BookcaseContent from '@/components/BookcaseContent'
 import Header from '@/components/Header'
 import Link from 'next/link'
 
@@ -36,8 +35,7 @@ export default async function BookcasePage({ params }: { params: { slug: string 
     <div className="bookshelf-container">
       <Header showSlug={user.slug} />
       <main className="max-w-7xl mx-auto px-4 pb-20">
-        <SearchBar />
-        <BookShelf books={books} categories={categories} />
+        <BookcaseContent books={books} categories={categories} />
       </main>
     </div>
   )

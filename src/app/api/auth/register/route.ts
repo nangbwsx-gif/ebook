@@ -10,6 +10,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '请填写用户名、密码和书橱标识' }, { status: 400 })
   }
 
+  if (password.length < 6) {
+    return NextResponse.json({ error: '密码长度至少6位' }, { status: 400 })
+  }
+
   if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug) || slug.length < 3) {
     return NextResponse.json({ error: '书橱标识格式不正确（3位以上，仅字母数字和横线）' }, { status: 400 })
   }
