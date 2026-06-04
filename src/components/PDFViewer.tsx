@@ -9,8 +9,6 @@ interface PDFViewerProps {
 /** 超过此高度（pt）的长页面将被切分为虚拟多页 */
 const MAX_PAGE_HEIGHT = 1263 // A4 842pt * 1.5
 
-/** 灰度页的暖色增强参数 */
-const WARMTH = { r: 1.06, g: 1.03, b: 0.94 } // 微暖调
 
 interface VirtualPage {
   physical: number    // 物理页号（1-based）
@@ -168,9 +166,6 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         canvas.height = offscreen.height
         ctx.drawImage(offscreen, 0, 0)
       }
-
-      // ─── 灰度暖色增强 ───
-      applyWarmthEnhance(ctx, canvas.width, canvas.height)
 
       // 存入缓存
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
@@ -566,29 +561,3 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   )
 }
 
-// ─── 灰度/浅色页暖色增强 ───
-function applyWarmthEnhance(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  try {
-    const data = ctx.getImageData(0, 0, w, h)
-    const pixels = data.data
-    let grayCount = 0, total = 0
-    // 先采样判断是否主要为灰度
-    for (let i = 0; i < pixels.length; i += 4 * 8) {
-      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2]
-      if (Math.abs(r - g) < 4 && Math.abs(g - b) < 4) grayCount++
-      total++
-    }
-    if (grayCount / total < 0.85) return // 彩色页不做暖色处理
-
-    // 灰度页：微调 RGB 通道添加暖色调
-    for (let i = 0; i < pixels.length; i += 4) {
-      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2]
-      pixels[i] = Math.min(255, r * WARMTH.r)
-      pixels[i + 1] = Math.min(255, g * WARMTH.g)
-      pixels[i + 2] = Math.min(255, b * WARMTH.b)
-    }
-    ctx.putImageData(data, 0, 0)
-  } catch {
-    // canvas tainted（跨域图片等）→ 跳过
-  }
-}
