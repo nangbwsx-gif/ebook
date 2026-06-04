@@ -2,10 +2,12 @@ import { prisma } from '@/lib/db'
 import BookcaseContent from '@/components/BookcaseContent'
 import Header from '@/components/Header'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
 export default async function BookcasePage({ params }: { params: { slug: string } }) {
+  cookies() // 确保每次请求都动态渲染
   const user = await prisma.user.findUnique({ where: { slug: params.slug } })
 
   if (!user) {

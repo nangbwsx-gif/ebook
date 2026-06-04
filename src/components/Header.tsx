@@ -34,7 +34,7 @@ export default function Header({ showSlug }: { showSlug?: string }) {
           >
             关于我们
           </button>
-          {user && (!showSlug || user.slug === showSlug) && (
+          {user && !showSlug && (
             <Link
               href="/dashboard"
               className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"

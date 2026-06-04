@@ -15,6 +15,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const [showJump, setShowJump] = useState(false)
   const [jumpInput, setJumpInput] = useState('')
   const [turning, setTurning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const nextCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -29,11 +30,24 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const skipNextRenderRef = useRef(false)
   const touchSwipedRef = useRef(false)
 
+  // ─── 页面缓存：已渲染的页面存 ImageData，翻回不重画 ───
+  const pageCacheRef = useRef<Map<number, ImageData>>(new Map())
+  // 记录当前正在预加载哪些页，避免重复
+  const preloadingRef = useRef<Set<number>>(new Set())
+
+  // ─── 翻页操作改用 ref，避免键盘监听器频繁重建 ───
+  const goNextRef = useRef<() => void>(() => {})
+  const goPrevRef = useRef<() => void>(() => {})
+
   // ─── 加载 PDF ───
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setCurrentPage(1)
+    setError(null)
+    setPdfDoc(null)
+    pageCacheRef.current.clear()
+    preloadingRef.current.clear()
 
     async function loadPDF() {
       try {
@@ -43,9 +57,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         if (!cancelled) {
           setPdfDoc(doc)
           setTotalPages(doc.numPages)
-          // 回写页数到数据库
+          // 异步回写页数到数据库（仅在服务端 pages=0 时有意义）
           const bookId = pdfUrl.split('/').pop()?.replace('.pdf', '')
-          if (bookId) {
+          if (bookId && doc.numPages > 0) {
             fetch(`/api/books/${bookId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
@@ -53,23 +67,71 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             }).catch(() => {})
           }
         }
-      } catch { if (!cancelled) setLoading(false) }
+      } catch (e) {
+        if (!cancelled) {
+          setLoading(false)
+          setError('样册加载失败，请检查文件是否完整或网络连接')
+        }
+      }
     }
     loadPDF()
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 渲染页面到 Canvas ───
-  const renderToCanvas = useCallback(async (pageNum: number, canvas: HTMLCanvasElement) => {
+  // ─── 渲染页面到 Canvas（带缓存） ───
+  const renderToCanvas = useCallback(async (pageNum: number, canvas: HTMLCanvasElement): Promise<boolean> => {
     if (!pdfDoc) return false
     try {
+      const ctx = canvas.getContext('2d')!
+      const cached = pageCacheRef.current.get(pageNum)
+
+      if (cached) {
+        // 缓存命中：直接 putImageData
+        canvas.width = cached.width
+        canvas.height = cached.height
+        ctx.putImageData(cached, 0, 0)
+        return true
+      }
+
+      // 缓存未命中：渲染并存入缓存
       const page = await pdfDoc.getPage(pageNum)
       const viewport = page.getViewport({ scale })
       canvas.width = viewport.width
       canvas.height = viewport.height
-      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+      await page.render({ canvasContext: ctx, viewport }).promise
+
+      // 存入缓存
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      pageCacheRef.current.set(pageNum, imageData)
+
       return true
-    } catch { return false }
+    } catch {
+      return false
+    }
+  }, [pdfDoc, scale])
+
+  // ─── 预加载相邻页面（用离屏 canvas，不挂载到 DOM） ───
+  const preloadNeighbors = useCallback(async (pageNum: number) => {
+    if (!pdfDoc || pdfDoc.numPages < 2) return
+    const neighbors = [pageNum + 1, pageNum - 1].filter(
+      p => p >= 1 && p <= pdfDoc.numPages && !pageCacheRef.current.has(p) && !preloadingRef.current.has(p)
+    )
+    for (const p of neighbors) {
+      preloadingRef.current.add(p)
+      try {
+        const page = await pdfDoc.getPage(p)
+        const viewport = page.getViewport({ scale })
+        // 离屏 canvas（不挂载到 DOM）
+        const offscreen = document.createElement('canvas')
+        offscreen.width = viewport.width
+        offscreen.height = viewport.height
+        const ctx = offscreen.getContext('2d')!
+        await page.render({ canvasContext: ctx, viewport }).promise
+        const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height)
+        pageCacheRef.current.set(p, imageData)
+      } catch { /* 预加载失败不影响主流程 */ }
+      preloadingRef.current.delete(p)
+    }
   }, [pdfDoc, scale])
 
   // ─── 渲染当前页 ───
@@ -85,11 +147,16 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     let cancelled = false
     setLoading(true)
     setShowJump(false)
+
     renderToCanvas(currentPage, mainCanvasRef.current).then(() => {
-      if (!cancelled) setLoading(false)
+      if (!cancelled) {
+        setLoading(false)
+        // 预加载相邻页
+        preloadNeighbors(currentPage)
+      }
     })
     return () => { cancelled = true }
-  }, [pdfDoc, currentPage, renderToCanvas])
+  }, [pdfDoc, currentPage, renderToCanvas, preloadNeighbors])
 
   // ─── 入场动画 ───
   useEffect(() => {
@@ -121,24 +188,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     // 渲染目标页到下层 canvas
     await renderToCanvas(targetPage, nextCanvasRef.current)
 
-    // 执行 clip-path 擦除动画
-    const wrap = clipWrapRef.current
-    const isNext = direction === 'next'
-    const startClip = 'inset(0 0% 0 0)'
-    const endClip = isNext ? 'inset(0 100% 0 0)' : 'inset(0 0 0 100%)'
-
-    // 设置初始状态
-    wrap.style.transition = 'none'
-    wrap.style.clipPath = startClip
-    void wrap.offsetHeight
-
-    // 播放动画
-    wrap.style.transition = 'clip-path 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
-    wrap.style.clipPath = endClip
-
-    // 动画完成
-    setTimeout(() => {
-      // 把目标页内容复制到主 canvas
+    // 如果翻页期间用户又触发了新的翻页，不播放动画直接跳转
+    if (!turningRef.current) {
+      // 已被中断，直接完成
       const main = mainCanvasRef.current!
       const next = nextCanvasRef.current!
       const ctx = main.getContext('2d')!
@@ -146,31 +198,67 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
       main.width = next.width
       main.height = next.height
       ctx.drawImage(next, 0, 0)
-
-      // 重置
-      wrap.style.transition = 'none'
-      wrap.style.clipPath = startClip
-
-      // 标记跳过重新渲染（canvas 已有内容）
       skipNextRenderRef.current = true
       setTurning(false)
       setCurrentPage(targetPage)
-      turningRef.current = false
-    }, 380)
+      return
+    }
+
+    // 执行 clip-path 擦除动画
+    const wrap = clipWrapRef.current
+    const isNext = direction === 'next'
+    const startClip = 'inset(0 0% 0 0)'
+    const endClip = isNext ? 'inset(0 100% 0 0)' : 'inset(0 0 0 100%)'
+
+    wrap.style.transition = 'none'
+    wrap.style.clipPath = startClip
+    void wrap.offsetHeight
+
+    wrap.style.transition = 'clip-path 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
+    wrap.style.clipPath = endClip
+
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        // 如果翻页已被中断，不处理
+        if (!turningRef.current) { resolve(); return }
+
+        const main = mainCanvasRef.current!
+        const next = nextCanvasRef.current!
+        const ctx = main.getContext('2d')!
+        ctx.clearRect(0, 0, main.width, main.height)
+        main.width = next.width
+        main.height = next.height
+        ctx.drawImage(next, 0, 0)
+
+        wrap.style.transition = 'none'
+        wrap.style.clipPath = startClip
+
+        skipNextRenderRef.current = true
+        setTurning(false)
+        setCurrentPage(targetPage)
+        turningRef.current = false
+        resolve()
+      }, 380)
+    })
   }, [pdfDoc, currentPage, totalPages, renderToCanvas])
 
-  const goNext = useCallback(() => turnPage('next'), [turnPage])
-  const goPrev = useCallback(() => turnPage('prev'), [turnPage])
+  // ─── goNext / goPrev 同时更新 ref（供键盘监听器使用）和回调 ───
+  goNextRef.current = useCallback(() => turnPage('next'), [turnPage])
+  goPrevRef.current = useCallback(() => turnPage('prev'), [turnPage])
 
-  // ─── 键盘 ───
+  // ─── 对外暴露的 goNext/goPrev（给按钮用） ───
+  const goNext = useCallback(() => goNextRef.current(), [])
+  const goPrev = useCallback(() => goPrevRef.current(), [])
+
+  // ─── 键盘（通过 ref 避免依赖变化重建） ───
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext()
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev()
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNextRef.current()
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrevRef.current()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [goNext, goPrev])
+  }, []) // 依赖为空，通过 ref 保证始终拿到最新函数
 
   const zoomIn = () => setScale(s => Math.min(s + 0.25, 3))
   const zoomOut = () => setScale(s => Math.max(s - 0.25, 0.5))
@@ -178,7 +266,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
 
   // ─── 点击翻页 ───
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (touchSwipedRef.current) { touchSwipedRef.current = false; return } // 跳过触摸滑动后的合成点击
+    if (touchSwipedRef.current) { touchSwipedRef.current = false; return }
     if (turning) return
     const rect = scrollRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -199,7 +287,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     if (dx > 10 || dy > 10) touchSwipedRef.current = true
   }
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (!touchSwipedRef.current) return // 轻触不管，让 click 处理
+    if (!touchSwipedRef.current) return
     const dx = e.changedTouches[0].clientX - touchStartX.current
     const dy = e.changedTouches[0].clientY - touchStartY.current
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
@@ -212,6 +300,28 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     e.preventDefault()
     const p = parseInt(jumpInput)
     if (p >= 1 && p <= totalPages) { setCurrentPage(p); setShowJump(false); setJumpInput('') }
+  }
+
+  // ─── 错误状态 ───
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center max-w-sm px-6">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-900/30 flex items-center justify-center">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+          </div>
+          <p className="text-gray-300 font-medium mb-2">加载失败</p>
+          <p className="text-gray-500 text-sm mb-6">{error}</p>
+          <button onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition">
+            重新加载
+          </button>
+        </div>
+      </div>
+    )
   }
 
   // ─── 加载中 ───

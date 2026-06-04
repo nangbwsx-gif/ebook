@@ -6,13 +6,11 @@ export default function PDFCover({ pdfUrl, bookId, title }: { pdfUrl: string; bo
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
-  const cachedRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
     setLoaded(false)
     setError(false)
-    cachedRef.current = false
 
     async function render() {
       try {
@@ -38,17 +36,6 @@ export default function PDFCover({ pdfUrl, bookId, title }: { pdfUrl: string; bo
 
         if (cancelled) return
         setLoaded(true)
-
-        // 缓存到服务端（只做一次）
-        if (!cachedRef.current) {
-          cachedRef.current = true
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
-          fetch(`/api/books/${bookId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ coverData: dataUrl }),
-          }).catch(() => {})
-        }
       } catch {
         if (!cancelled) setError(true)
       }

@@ -46,6 +46,7 @@ export async function PATCH(
   if (data.description !== undefined) updateFields.description = data.description
   if (data.pages !== undefined) updateFields.pages = data.pages
   if (data.coverUrl !== undefined) updateFields.coverUrl = data.coverUrl
+  if (data.categoryId !== undefined) updateFields.categoryId = data.categoryId
 
   const updated = await prisma.book.update({
     where: { id: params.id },

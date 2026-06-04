@@ -90,6 +90,53 @@ export default function DashboardPage() {
     router.push('/')
   }
 
+  // ─── 分类管理 ───
+  const [editingCat, setEditingCat] = useState<string | null>(null)
+  const [editCatName, setEditCatName] = useState('')
+  const [newCatName, setNewCatName] = useState('')
+
+  async function handleCreateCategory() {
+    if (!newCatName.trim()) return
+    const res = await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newCatName.trim() }),
+    })
+    if (res.ok) {
+      setNewCatName('')
+      loadData()
+    }
+  }
+
+  async function handleRenameCategory(id: string) {
+    if (!editCatName.trim()) return
+    const res = await fetch(`/api/categories/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editCatName.trim() }),
+    })
+    if (res.ok) {
+      setEditingCat(null)
+      setEditCatName('')
+      loadData()
+    }
+  }
+
+  async function handleDeleteCategory(id: string, name: string) {
+    if (!confirm(`确定要删除分类「${name}」吗？该分类下的书籍将变为未分类`)) return
+    await fetch(`/api/categories/${id}`, { method: 'DELETE' })
+    loadData()
+  }
+
+  async function handleChangeBookCategory(bookId: string, categoryId: string) {
+    await fetch(`/api/books/${bookId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categoryId: categoryId || null }),
+    })
+    loadData()
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
@@ -108,7 +155,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-950">
       <header className="bg-gray-900 border-b border-gray-800 px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={bookcaseUrl} className="text-gray-400 hover:text-white transition" title="查看书橱">
+          <Link href={bookcaseUrl} prefetch={false} className="text-gray-400 hover:text-white transition" title="查看书橱">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -117,7 +164,7 @@ export default function DashboardPage() {
           <span className="text-sm text-gray-500">({user?.username})</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link href={bookcaseUrl}
+          <Link href={bookcaseUrl} prefetch={false}
             className="text-sm text-blue-400 hover:text-blue-300 transition">
             查看书橱 →
           </Link>
@@ -188,6 +235,69 @@ export default function DashboardPage() {
           </form>
         </div>
 
+        {/* 分类管理 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-white">分类管理</h2>
+          </div>
+          {/* 新建分类 */}
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              type="text"
+              value={newCatName}
+              onChange={e => setNewCatName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateCategory() }}
+              placeholder="新分类名称"
+              className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 transition" />
+            <button onClick={handleCreateCategory}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition">
+              + 创建分类
+            </button>
+          </div>
+          {categories.length === 0 ? (
+            <p className="text-gray-500 text-sm">暂无分类，上传样册时创建分类即可</p>
+          ) : (
+            <div className="space-y-2">
+              {categories.map(cat => (
+                <div key={cat.id} className="flex items-center justify-between px-4 py-2 bg-gray-800/50 rounded-lg">
+                  {editingCat === cat.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="text"
+                        value={editCatName}
+                        onChange={e => setEditCatName(e.target.value)}
+                        className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:border-blue-500"
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') handleRenameCategory(cat.id); if (e.key === 'Escape') setEditingCat(null) }} />
+                      <button onClick={() => handleRenameCategory(cat.id)}
+                        className="px-2 py-1 text-xs text-green-400 hover:bg-green-900/30 rounded transition">保存</button>
+                      <button onClick={() => setEditingCat(null)}
+                        className="px-2 py-1 text-xs text-gray-400 hover:bg-gray-700 rounded transition">取消</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <span className="text-white text-sm">{cat.name}</span>
+                      <span className="text-xs text-gray-500">({cat._count.books}本)</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => { setEditingCat(cat.id); setEditCatName(cat.name) }}
+                      className="px-2 py-1 text-xs text-blue-400 hover:bg-blue-900/30 rounded transition">
+                      重命名
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                      className="px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 rounded transition">
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* 书籍列表 */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-800">
@@ -215,8 +325,17 @@ export default function DashboardPage() {
                     <div className="min-w-0">
                       <h3 className="text-sm font-medium text-white truncate">{book.title}</h3>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {book.pages}页 · {book.category?.name || '未分类'} · {new Date(book.createdAt).toLocaleDateString('zh-CN')}
+                        {book.pages}页 · {new Date(book.createdAt).toLocaleDateString('zh-CN')}
                       </p>
+                      <div className="mt-1">
+                        <select
+                          value={book.category?.id || ''}
+                          onChange={e => handleChangeBookCategory(book.id, e.target.value)}
+                          className="text-xs bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-300 focus:outline-none focus:border-blue-500 cursor-pointer">
+                          <option value="">未分类</option>
+                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 ml-4">
