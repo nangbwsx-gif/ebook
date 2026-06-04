@@ -96,8 +96,10 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 滚动模式：智能缩放渲染（限制分辨率，避免卡死） ───
+  // ─── 滚动模式：高分渲染 + CSS 即时缩放 ───
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  // 记录 canvas 原生宽度（像素），用于 CSS 显示
+  const scrollNativeWidthRef = useRef(0)
 
   useEffect(() => {
     if (!pdfDoc || !scrollMode || !scrollCanvasRef.current) return
@@ -111,25 +113,28 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         const page = await pdfDoc.getPage(1)
         const fullVp = page.getViewport({ scale: 1 })
 
-        // 高质量渲染：宽度适配容器 ×1.5 倍，总面积 ≤ 12MP
-        const containerW = scrollContainerRef.current?.clientWidth || 900
-        const fitScale = Math.max((containerW - 40) / fullVp.width * 1.5, 0.3)
-        const areaLimit = 12_000_000
-        const areaScale = Math.sqrt(areaLimit / (fullVp.width * fullVp.height))
-        const safeScale = Math.min(fitScale, areaScale, 1.5)
+        // 计算渲染缩放：
+        // 1. 宽适配 × 2 倍超采样（放大到 200% 都清晰）
+        // 2. 总面积 ≤ 12MP
+        const fitScale = fullVp.width > 0 ? ((scrollContainerRef.current?.clientWidth || 900) - 40) / fullVp.width * 2 : 1
+        const areaScale = Math.sqrt(12_000_000 / (fullVp.width * fullVp.height))
+        const renderScale = Math.min(Math.max(fitScale, 0.3), areaScale, 1.5)
 
-        const vp = page.getViewport({ scale: safeScale })
-        if (!cancelled) setScrollDisplayZoom(100)
+        const renderVp = page.getViewport({ scale: renderScale })
         const canvas = scrollCanvasRef.current!
-        canvas.width = Math.ceil(vp.width)
-        canvas.height = Math.ceil(vp.height)
+        canvas.width = Math.ceil(renderVp.width)
+        canvas.height = Math.ceil(renderVp.height)
+        scrollNativeWidthRef.current = canvas.width
 
         await page.render({
           canvasContext: canvas.getContext('2d')!,
-          viewport: vp,
+          viewport: renderVp,
         }).promise
 
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setScrollDisplayZoom(100)
+        }
       } catch {
         if (!cancelled) setError('页面加载失败，请刷新重试')
       }
@@ -284,7 +289,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   }, [scrollMode])
 
   const zoomIn  = () => {
-    if (scrollMode) setScrollDisplayZoom(z => Math.min(300, z + 25))
+    if (scrollMode) setScrollDisplayZoom(z => Math.min(200, z + 25))
     else setScale(s => Math.min(3, s + 0.25))
   }
   const zoomOut = () => {
@@ -530,9 +535,10 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
               className="shadow-2xl rounded-sm"
               style={{
                 display: loading ? 'none' : 'block',
-                width: '100%',
+                width: `${scrollDisplayZoom}%`,
+                maxWidth: 'none',
                 height: 'auto',
-                zoom: scrollDisplayZoom / 100,
+                imageRendering: 'auto',
               }} />
           </div>
         ) : (
