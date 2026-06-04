@@ -22,7 +22,6 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const [scrollMode, setScrollMode] = useState(false)       // 滚动模式
   const [hasTallPage, setHasTallPage] = useState(false)     // 是否有超长页
   const [scrollProgress, setScrollProgress] = useState(0)   // 滚动进度 0-100
-  const [scrollDisplayZoom, setScrollDisplayZoom] = useState(100) // 滚动模式 CSS 缩放 %
 
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const nextCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -96,52 +95,50 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 滚动模式：高分渲染 + CSS 即时缩放 ───
+  // ─── 滚动模式：按缩放级别高清渲染（放大→重绘→真清晰） ───
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  // 记录 canvas 原生宽度（像素），用于 CSS 显示
-  const scrollNativeWidthRef = useRef(0)
+  const scrollRenderingRef = useRef(false)     // 渲染锁，防并发
 
   useEffect(() => {
     if (!pdfDoc || !scrollMode || !scrollCanvasRef.current) return
     if (pdfDoc.numPages < 1) return
+    if (scrollRenderingRef.current) return      // 已有渲染任务进行中，跳过
 
     let cancelled = false
     setLoading(true)
+    scrollRenderingRef.current = true
 
     async function renderScroll() {
       try {
         const page = await pdfDoc.getPage(1)
         const fullVp = page.getViewport({ scale: 1 })
 
-        // 计算渲染缩放：
-        // 1. 宽适配 × 2 倍超采样（放大到 200% 都清晰）
-        // 2. 总面积 ≤ 12MP
-        const fitScale = fullVp.width > 0 ? ((scrollContainerRef.current?.clientWidth || 900) - 40) / fullVp.width * 2 : 1
+        // 宽适配 + 总面积 ≤ 12MP（安全上限）
+        const fitScale = fullVp.width > 0 ? ((scrollContainerRef.current?.clientWidth || 900) - 40) / fullVp.width * scale : scale
         const areaScale = Math.sqrt(12_000_000 / (fullVp.width * fullVp.height))
-        const renderScale = Math.min(Math.max(fitScale, 0.3), areaScale, 1.5)
+        const renderScale = Math.min(fitScale, areaScale, scale)
 
-        const renderVp = page.getViewport({ scale: renderScale })
+        const renderVp = page.getViewport({ scale: Math.max(renderScale, 0.3) })
         const canvas = scrollCanvasRef.current!
         canvas.width = Math.ceil(renderVp.width)
         canvas.height = Math.ceil(renderVp.height)
-        scrollNativeWidthRef.current = canvas.width
 
         await page.render({
           canvasContext: canvas.getContext('2d')!,
           viewport: renderVp,
         }).promise
 
+        if (!cancelled) setLoading(false)
+      } catch {
         if (!cancelled) {
           setLoading(false)
-          setScrollDisplayZoom(100)
+          setError('页面渲染失败，请刷新重试')
         }
-      } catch {
-        if (!cancelled) setError('页面加载失败，请刷新重试')
       }
     }
-    renderScroll()
+    renderScroll().finally(() => { scrollRenderingRef.current = false })
     return () => { cancelled = true }
-  }, [pdfDoc, scrollMode, pdfUrl])
+  }, [pdfDoc, scrollMode, scale, pdfUrl])
 
   // ─── 滚动模式：监听滚动进度 ───
   useEffect(() => {
@@ -288,18 +285,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => window.removeEventListener('keydown', h)
   }, [scrollMode])
 
-  const zoomIn  = () => {
-    if (scrollMode) setScrollDisplayZoom(z => Math.min(200, z + 25))
-    else setScale(s => Math.min(3, s + 0.25))
-  }
-  const zoomOut = () => {
-    if (scrollMode) setScrollDisplayZoom(z => Math.max(50, z - 25))
-    else setScale(s => Math.max(0.5, s - 0.25))
-  }
-  const resetView = () => {
-    if (scrollMode) setScrollDisplayZoom(100)
-    else { setCurrentPage(1); setScale(1.5) }
-  }
+  const zoomIn  = () => setScale(s => Math.min(3, s + 0.25))
+  const zoomOut = () => setScale(s => Math.max(0.5, s - 0.25))
+  const resetView = () => { setCurrentPage(1); setScale(1.5) }
 
   // ─── 点击翻页（仅翻页模式） ───
   const handleCanvasClick = (e: React.MouseEvent) => {
@@ -456,7 +444,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
             </svg>
           </button>
-          <span className="text-xs text-gray-400 w-12 text-center tabular-nums font-medium">{scrollMode ? `${scrollDisplayZoom}%` : `${Math.round(scale * 100)}%`}</span>
+          <span className="text-xs text-gray-400 w-12 text-center tabular-nums font-medium">{Math.round(scale * 100)}%</span>
           <button onClick={zoomIn} disabled={scale >= 3}
             className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg active:scale-90 disabled:opacity-20" title="放大">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -535,10 +523,8 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
               className="shadow-2xl rounded-sm"
               style={{
                 display: loading ? 'none' : 'block',
-                width: `${scrollDisplayZoom}%`,
-                maxWidth: 'none',
+                width: '100%',
                 height: 'auto',
-                imageRendering: 'auto',
               }} />
           </div>
         ) : (
