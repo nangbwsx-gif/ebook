@@ -6,6 +6,19 @@ interface PDFViewerProps {
   pdfUrl: string
 }
 
+/** 超过此高度（pt）的长页面将被切分为虚拟多页 */
+const MAX_PAGE_HEIGHT = 1263 // A4 842pt * 1.5
+
+/** 灰度页的暖色增强参数 */
+const WARMTH = { r: 1.06, g: 1.03, b: 0.94 } // 微暖调
+
+interface VirtualPage {
+  physical: number    // 物理页号（1-based）
+  offsetY: number     // 在该物理页中的 Y 偏移（pt）
+  height: number      // 本虚拟页的高度（pt）
+  index: number       // 虚拟页在该物理页中的序号
+}
+
 export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -16,6 +29,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const [jumpInput, setJumpInput] = useState('')
   const [turning, setTurning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pageInfo, setPageInfo] = useState('')
 
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const nextCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -30,12 +44,10 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const skipNextRenderRef = useRef(false)
   const touchSwipedRef = useRef(false)
 
-  // ─── 页面缓存：已渲染的页面存 ImageData，翻回不重画 ───
-  const pageCacheRef = useRef<Map<number, ImageData>>(new Map())
-  // 记录当前正在预加载哪些页，避免重复
-  const preloadingRef = useRef<Set<number>>(new Set())
-
-  // ─── 翻页操作改用 ref，避免键盘监听器频繁重建 ───
+  // ─── 虚拟页映射表 & 页面缓存 ───
+  const vpagesRef = useRef<VirtualPage[]>([])       // 虚拟→物理映射
+  const pageCacheRef = useRef<Map<string, ImageData>>(new Map())  // key: "pNum@offsetY"
+  const preloadingRef = useRef<Set<string>>(new Set())
   const goNextRef = useRef<() => void>(() => {})
   const goPrevRef = useRef<() => void>(() => {})
 
@@ -46,26 +58,51 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     setCurrentPage(1)
     setError(null)
     setPdfDoc(null)
+    setPageInfo('')
     pageCacheRef.current.clear()
     preloadingRef.current.clear()
+    vpagesRef.current = []
 
     async function loadPDF() {
       try {
         const pdfjsLib = await import('pdfjs-dist')
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
         const doc = await pdfjsLib.getDocument(pdfUrl).promise
-        if (!cancelled) {
-          setPdfDoc(doc)
-          setTotalPages(doc.numPages)
-          // 异步回写页数到数据库（仅在服务端 pages=0 时有意义）
-          const bookId = pdfUrl.split('/').pop()?.replace('.pdf', '')
-          if (bookId && doc.numPages > 0) {
-            fetch(`/api/books/${bookId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pages: doc.numPages }),
-            }).catch(() => {})
+        if (cancelled) return
+
+        setPdfDoc(doc)
+
+        // ─── 分析所有物理页，生成虚拟页映射 ───
+        const vp: VirtualPage[] = []
+        for (let p = 1; p <= doc.numPages; p++) {
+          const page = await doc.getPage(p)
+          const vpHeight = page.getViewport({ scale: 1 }).height
+          if (vpHeight <= MAX_PAGE_HEIGHT) {
+            vp.push({ physical: p, offsetY: 0, height: vpHeight, index: 0 })
+          } else {
+            const segments = Math.ceil(vpHeight / MAX_PAGE_HEIGHT)
+            for (let s = 0; s < segments; s++) {
+              const segH = Math.min(MAX_PAGE_HEIGHT, vpHeight - s * MAX_PAGE_HEIGHT)
+              vp.push({ physical: p, offsetY: s * MAX_PAGE_HEIGHT, height: segH, index: s })
+            }
           }
+        }
+        vpagesRef.current = vp
+        setTotalPages(vp.length)
+        setPageInfo(
+          doc.numPages === vp.length
+            ? ''
+            : `（共 ${doc.numPages} 页，因高度过大切分为 ${vp.length} 屏）`
+        )
+
+        // 异步回写页数
+        const bookId = pdfUrl.split('/').pop()?.replace('.pdf', '')
+        if (bookId && doc.numPages > 0) {
+          fetch(`/api/books/${bookId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pages: doc.numPages }),
+          }).catch(() => {})
         }
       } catch (e) {
         if (!cancelled) {
@@ -78,31 +115,66 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 渲染页面到 Canvas（带缓存） ───
-  const renderToCanvas = useCallback(async (pageNum: number, canvas: HTMLCanvasElement): Promise<boolean> => {
-    if (!pdfDoc) return false
+  // ─── 渲染页面到 Canvas（支持虚拟页裁剪 + 缓存） ───
+  const renderToCanvas = useCallback(async (
+    vpageIndex: number,
+    canvas: HTMLCanvasElement
+  ): Promise<boolean> => {
+    const vp = vpagesRef.current[vpageIndex - 1]
+    if (!pdfDoc || !vp) return false
+
+    const cacheKey = `${vp.physical}@${vp.offsetY}`
+
     try {
       const ctx = canvas.getContext('2d')!
-      const cached = pageCacheRef.current.get(pageNum)
+      const cached = pageCacheRef.current.get(cacheKey)
 
       if (cached) {
-        // 缓存命中：直接 putImageData
         canvas.width = cached.width
         canvas.height = cached.height
         ctx.putImageData(cached, 0, 0)
         return true
       }
 
-      // 缓存未命中：渲染并存入缓存
-      const page = await pdfDoc.getPage(pageNum)
-      const viewport = page.getViewport({ scale })
-      canvas.width = viewport.width
-      canvas.height = viewport.height
-      await page.render({ canvasContext: ctx, viewport }).promise
+      // 渲染物理页——但只截取对应的 Y 片段
+      const page = await pdfDoc.getPage(vp.physical)
+      const fullVp = page.getViewport({ scale })
+      const renderHeight = vp.height * scale
+
+      // 如果不需要裁剪，直接渲染
+      if (vp.offsetY === 0 && vp.height >= fullVp.height) {
+        canvas.width = Math.ceil(fullVp.width)
+        canvas.height = Math.ceil(fullVp.height)
+        await page.render({ canvasContext: ctx, viewport: fullVp }).promise
+      } else {
+        // 需要裁剪：渲染到离屏 canvas，再截取片段
+        const offscreen = document.createElement('canvas')
+        offscreen.width = Math.ceil(fullVp.width)
+        offscreen.height = Math.ceil(renderHeight)
+        const offCtx = offscreen.getContext('2d')!
+
+        // 用 transform 偏移视口来只渲染需要的片段
+        const segmentVp = page.getViewport({
+          scale,
+          offsetX: 0,
+          offsetY: -vp.offsetY,
+        })
+        // 画布只取片段高度
+        offscreen.width = Math.ceil(segmentVp.width)
+        offscreen.height = Math.ceil(renderHeight)
+        await page.render({ canvasContext: offCtx, viewport: segmentVp }).promise
+
+        canvas.width = offscreen.width
+        canvas.height = offscreen.height
+        ctx.drawImage(offscreen, 0, 0)
+      }
+
+      // ─── 灰度暖色增强 ───
+      applyWarmthEnhance(ctx, canvas.width, canvas.height)
 
       // 存入缓存
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      pageCacheRef.current.set(pageNum, imageData)
+      pageCacheRef.current.set(cacheKey, imageData)
 
       return true
     } catch {
@@ -110,35 +182,33 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     }
   }, [pdfDoc, scale])
 
-  // ─── 预加载相邻页面（用离屏 canvas，不挂载到 DOM） ───
-  const preloadNeighbors = useCallback(async (pageNum: number) => {
-    if (!pdfDoc || pdfDoc.numPages < 2) return
-    const neighbors = [pageNum + 1, pageNum - 1].filter(
-      p => p >= 1 && p <= pdfDoc.numPages && !pageCacheRef.current.has(p) && !preloadingRef.current.has(p)
+  // ─── 预加载相邻虚拟页 ───
+  const preloadNeighbors = useCallback(async (vpageIndex: number) => {
+    if (!pdfDoc || vpagesRef.current.length < 2) return
+    const neighbors = [vpageIndex + 1, vpageIndex - 1].filter(
+      p => {
+        const vp = vpagesRef.current[p - 1]
+        if (!vp) return false
+        const key = `${vp.physical}@${vp.offsetY}`
+        return !pageCacheRef.current.has(key) && !preloadingRef.current.has(key)
+      }
     )
     for (const p of neighbors) {
-      preloadingRef.current.add(p)
+      const vp = vpagesRef.current[p - 1]
+      const key = `${vp.physical}@${vp.offsetY}`
+      preloadingRef.current.add(key)
       try {
-        const page = await pdfDoc.getPage(p)
-        const viewport = page.getViewport({ scale })
-        // 离屏 canvas（不挂载到 DOM）
         const offscreen = document.createElement('canvas')
-        offscreen.width = viewport.width
-        offscreen.height = viewport.height
-        const ctx = offscreen.getContext('2d')!
-        await page.render({ canvasContext: ctx, viewport }).promise
-        const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height)
-        pageCacheRef.current.set(p, imageData)
-      } catch { /* 预加载失败不影响主流程 */ }
-      preloadingRef.current.delete(p)
+        await renderToCanvas(p, offscreen)
+      } catch { /* ok */ }
+      preloadingRef.current.delete(key)
     }
-  }, [pdfDoc, scale])
+  }, [pdfDoc, renderToCanvas])
 
-  // ─── 渲染当前页 ───
+  // ─── 渲染当前虚拟页 ───
   useEffect(() => {
     if (!pdfDoc || !mainCanvasRef.current) return
 
-    // 翻页动画后 canvas 已有正确内容，跳过重新渲染避免闪烁
     if (skipNextRenderRef.current) {
       skipNextRenderRef.current = false
       return
@@ -151,7 +221,6 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     renderToCanvas(currentPage, mainCanvasRef.current).then(() => {
       if (!cancelled) {
         setLoading(false)
-        // 预加载相邻页
         preloadNeighbors(currentPage)
       }
     })
@@ -174,7 +243,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     prevLoadingRef.current = loading
   }, [loading])
 
-  // ─── 翻页动画（clip-path 擦除 + 装饰角） ───
+  // ─── 翻页动画 ───
   const turnPage = useCallback(async (direction: 'next' | 'prev') => {
     if (turningRef.current || !pdfDoc || !clipWrapRef.current || !mainCanvasRef.current || !nextCanvasRef.current) return
 
@@ -185,12 +254,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     setTurning(true)
     turnDirRef.current = direction
 
-    // 渲染目标页到下层 canvas
     await renderToCanvas(targetPage, nextCanvasRef.current)
 
-    // 如果翻页期间用户又触发了新的翻页，不播放动画直接跳转
     if (!turningRef.current) {
-      // 已被中断，直接完成
       const main = mainCanvasRef.current!
       const next = nextCanvasRef.current!
       const ctx = main.getContext('2d')!
@@ -204,7 +270,6 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
       return
     }
 
-    // 执行 clip-path 擦除动画
     const wrap = clipWrapRef.current
     const isNext = direction === 'next'
     const startClip = 'inset(0 0% 0 0)'
@@ -219,9 +284,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
 
     return new Promise<void>((resolve) => {
       setTimeout(() => {
-        // 如果翻页已被中断，不处理
         if (!turningRef.current) { resolve(); return }
-
         const main = mainCanvasRef.current!
         const next = nextCanvasRef.current!
         const ctx = main.getContext('2d')!
@@ -229,10 +292,8 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         main.width = next.width
         main.height = next.height
         ctx.drawImage(next, 0, 0)
-
         wrap.style.transition = 'none'
         wrap.style.clipPath = startClip
-
         skipNextRenderRef.current = true
         setTurning(false)
         setCurrentPage(targetPage)
@@ -242,15 +303,12 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     })
   }, [pdfDoc, currentPage, totalPages, renderToCanvas])
 
-  // ─── goNext / goPrev 同时更新 ref（供键盘监听器使用）和回调 ───
   goNextRef.current = useCallback(() => turnPage('next'), [turnPage])
   goPrevRef.current = useCallback(() => turnPage('prev'), [turnPage])
-
-  // ─── 对外暴露的 goNext/goPrev（给按钮用） ───
   const goNext = useCallback(() => goNextRef.current(), [])
   const goPrev = useCallback(() => goPrevRef.current(), [])
 
-  // ─── 键盘（通过 ref 避免依赖变化重建） ───
+  // ─── 键盘 ───
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNextRef.current()
@@ -258,7 +316,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, []) // 依赖为空，通过 ref 保证始终拿到最新函数
+  }, [])
 
   const zoomIn = () => setScale(s => Math.min(s + 0.25, 3))
   const zoomOut = () => setScale(s => Math.max(s - 0.25, 0.5))
@@ -340,7 +398,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     )
   }
 
-  const progress = (currentPage / totalPages) * 100
+  const progress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0
 
   return (
     <div className="flex flex-col h-full select-none">
@@ -427,6 +485,13 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         </div>
       </header>
 
+      {/* ─── 分页提示 ─── */}
+      {pageInfo && (
+        <div className="bg-blue-900/30 border-b border-blue-800/30 px-3 py-1 text-center">
+          <span className="text-xs text-blue-300">{pageInfo}</span>
+        </div>
+      )}
+
       {/* ─── PDF 画布 + 翻页动画 ─── */}
       <div ref={scrollRef}
         className="flex-1 overflow-auto flex justify-center bg-[#1a1a2e]"
@@ -436,7 +501,6 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         onTouchEnd={onTouchEnd}
       >
         <div className="relative my-4 inline-flex">
-          {/* 加载遮罩 */}
           {loading && !turning && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a2e]/80 z-20 rounded-sm">
               <div className="flex flex-col items-center gap-3">
@@ -450,28 +514,21 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             </div>
           )}
 
-          {/* 两层面画布叠放：下层是目标页，上层是当前页（被 clip-path 擦除） */}
           <div className="relative" style={{ display: 'grid' }}>
-            {/* 下层：目标页（翻页动画期间显示） */}
             <div className="row-start-1 col-start-1" style={{ gridArea: '1/1' }}>
               <canvas ref={nextCanvasRef}
                 className="shadow-2xl rounded-sm"
                 style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
             </div>
 
-            {/* 上层：当前页（clip-path 从右/向左擦除，露出下层目标页） */}
             <div ref={clipWrapRef}
               className="row-start-1 col-start-1"
-              style={{
-                gridArea: '1/1',
-                clipPath: 'inset(0 0% 0 0)',
-              }}
+              style={{ gridArea: '1/1', clipPath: 'inset(0 0% 0 0)' }}
             >
               <canvas ref={mainCanvasRef}
                 className="shadow-2xl rounded-sm"
                 style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
 
-              {/* 翻页装饰：右下角折角 */}
               <div className="absolute bottom-0 right-0 w-16 h-16 pointer-events-none"
                 style={{
                   background: 'linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.06) 100%)',
@@ -484,12 +541,8 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
                   }} />
               </div>
 
-              {/* 翻页擦除边缘的阴影 */}
               <div className="absolute top-0 bottom-0 w-10 pointer-events-none z-10"
-                style={{
-                  right: 0,
-                  background: 'linear-gradient(to left, rgba(0,0,0,0.08), transparent)',
-                }} />
+                style={{ right: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.08), transparent)' }} />
             </div>
           </div>
         </div>
@@ -511,4 +564,31 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
       </div>
     </div>
   )
+}
+
+// ─── 灰度/浅色页暖色增强 ───
+function applyWarmthEnhance(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  try {
+    const data = ctx.getImageData(0, 0, w, h)
+    const pixels = data.data
+    let grayCount = 0, total = 0
+    // 先采样判断是否主要为灰度
+    for (let i = 0; i < pixels.length; i += 4 * 8) {
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2]
+      if (Math.abs(r - g) < 4 && Math.abs(g - b) < 4) grayCount++
+      total++
+    }
+    if (grayCount / total < 0.85) return // 彩色页不做暖色处理
+
+    // 灰度页：微调 RGB 通道添加暖色调
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2]
+      pixels[i] = Math.min(255, r * WARMTH.r)
+      pixels[i + 1] = Math.min(255, g * WARMTH.g)
+      pixels[i + 2] = Math.min(255, b * WARMTH.b)
+    }
+    ctx.putImageData(data, 0, 0)
+  } catch {
+    // canvas tainted（跨域图片等）→ 跳过
+  }
 }
