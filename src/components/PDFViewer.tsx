@@ -95,7 +95,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 滚动模式：渲染整页到全高 canvas ───
+  // ─── 滚动模式：智能缩放渲染（限制分辨率，避免卡死） ───
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (!pdfDoc || !scrollMode || !scrollCanvasRef.current) return
     if (pdfDoc.numPages < 1) return
@@ -106,22 +108,33 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     async function renderScroll() {
       try {
         const page = await pdfDoc.getPage(1)
-        const vp = page.getViewport({ scale })
+        const fullVp = page.getViewport({ scale: 1 })
+
+        // 自动缩放：宽度适配容器，且总面积 ≤ 4MP（避免大画布卡死）
+        const containerW = scrollContainerRef.current?.clientWidth || 900
+        const fitScale = Math.max((containerW - 40) / fullVp.width, 0.2)
+        const areaLimit = 4_000_000
+        const areaScale = Math.sqrt(areaLimit / (fullVp.width * fullVp.height))
+        const safeScale = Math.min(fitScale, areaScale, 1.5)
+
+        const vp = page.getViewport({ scale: safeScale })
         const canvas = scrollCanvasRef.current!
         canvas.width = Math.ceil(vp.width)
         canvas.height = Math.ceil(vp.height)
+
         await page.render({
           canvasContext: canvas.getContext('2d')!,
           viewport: vp,
         }).promise
+
         if (!cancelled) setLoading(false)
       } catch {
-        if (!cancelled) setError('页面渲染失败，请尝试缩小显示比例')
+        if (!cancelled) setError('页面加载失败，请刷新重试')
       }
     }
     renderScroll()
     return () => { cancelled = true }
-  }, [pdfDoc, scrollMode, scale])
+  }, [pdfDoc, scrollMode, pdfUrl])
 
   // ─── 滚动模式：监听滚动进度 ───
   useEffect(() => {
@@ -492,7 +505,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
       >
         {scrollMode ? (
           /* ─── 滚动模式：全高画布 ─── */
-          <div className="p-4 mx-auto" style={{ maxWidth: '95vw' }}>
+          <div ref={scrollContainerRef} className="p-4 mx-auto" style={{ maxWidth: '95vw' }}>
             {loading && (
               <div className="flex items-center justify-center h-64">
                 <div className="flex gap-2">
