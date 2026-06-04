@@ -6,28 +6,17 @@ interface PDFViewerProps {
   pdfUrl: string
 }
 
-/** 超过此高度（pt）的长页面将被切分为虚拟多页 */
-const MAX_PAGE_HEIGHT = 1263 // A4 842pt * 1.5
-
-
-interface VirtualPage {
-  physical: number    // 物理页号（1-based）
-  offsetY: number     // 在该物理页中的 Y 偏移（pt）
-  height: number      // 本虚拟页的高度（pt）
-  index: number       // 虚拟页在该物理页中的序号
-}
-
 export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.5)
+  const [autoScale, setAutoScale] = useState<number | null>(null) // 超长页自动缩放到合适尺寸
   const [loading, setLoading] = useState(true)
   const [pdfDoc, setPdfDoc] = useState<any>(null)
   const [showJump, setShowJump] = useState(false)
   const [jumpInput, setJumpInput] = useState('')
   const [turning, setTurning] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [pageInfo, setPageInfo] = useState('')
 
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const nextCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -42,10 +31,11 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const skipNextRenderRef = useRef(false)
   const touchSwipedRef = useRef(false)
 
-  // ─── 虚拟页映射表 & 页面缓存 ───
-  const vpagesRef = useRef<VirtualPage[]>([])       // 虚拟→物理映射
-  const pageCacheRef = useRef<Map<string, ImageData>>(new Map())  // key: "pNum@offsetY"
-  const preloadingRef = useRef<Set<string>>(new Set())
+  // 页面缓存与预加载
+  const pageCacheRef = useRef<Map<number, ImageData>>(new Map())
+  const preloadingRef = useRef<Set<number>>(new Set())
+  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const goNextRef = useRef<() => void>(() => {})
   const goPrevRef = useRef<() => void>(() => {})
 
@@ -56,10 +46,8 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     setCurrentPage(1)
     setError(null)
     setPdfDoc(null)
-    setPageInfo('')
     pageCacheRef.current.clear()
     preloadingRef.current.clear()
-    vpagesRef.current = []
 
     async function loadPDF() {
       try {
@@ -69,31 +57,24 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         if (cancelled) return
 
         setPdfDoc(doc)
+        setTotalPages(doc.numPages)
 
-        // ─── 分析所有物理页，生成虚拟页映射 ───
-        const vp: VirtualPage[] = []
-        for (let p = 1; p <= doc.numPages; p++) {
-          const page = await doc.getPage(p)
-          const vpHeight = page.getViewport({ scale: 1 }).height
-          if (vpHeight <= MAX_PAGE_HEIGHT) {
-            vp.push({ physical: p, offsetY: 0, height: vpHeight, index: 0 })
-          } else {
-            const segments = Math.ceil(vpHeight / MAX_PAGE_HEIGHT)
-            for (let s = 0; s < segments; s++) {
-              const segH = Math.min(MAX_PAGE_HEIGHT, vpHeight - s * MAX_PAGE_HEIGHT)
-              vp.push({ physical: p, offsetY: s * MAX_PAGE_HEIGHT, height: segH, index: s })
-            }
-          }
+        // 超长页面自动缩放到合适大小（避免 canvas 内存超限）
+        const page = await doc.getPage(1)
+        const vp = page.getViewport({ scale: 1 })
+        const ratio = vp.height / vp.width
+        if (ratio > 3) {
+          // 超高页面：限制渲染画布最大约 2000×8000 像素
+          const maxH = 8000 / vp.height
+          const maxW = 2000 / vp.width
+          const autoS = Math.min(maxH, maxW, 1.5)
+          setAutoScale(Number(autoS.toFixed(2)))
+          setScale(Number(autoS.toFixed(2)))
+        } else {
+          setAutoScale(null)
         }
-        vpagesRef.current = vp
-        setTotalPages(vp.length)
-        setPageInfo(
-          doc.numPages === vp.length
-            ? ''
-            : `（共 ${doc.numPages} 页，因高度过大切分为 ${vp.length} 屏）`
-        )
 
-        // 异步回写页数
+        // 异步回写页数到数据库
         const bookId = pdfUrl.split('/').pop()?.replace('.pdf', '')
         if (bookId && doc.numPages > 0) {
           fetch(`/api/books/${bookId}`, {
@@ -102,7 +83,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             body: JSON.stringify({ pages: doc.numPages }),
           }).catch(() => {})
         }
-      } catch (e) {
+      } catch {
         if (!cancelled) {
           setLoading(false)
           setError('样册加载失败，请检查文件是否完整或网络连接')
@@ -113,19 +94,15 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 渲染页面到 Canvas（支持虚拟页裁剪 + 缓存） ───
+  // ─── 渲染物理页到 Canvas（带缓存） ───
   const renderToCanvas = useCallback(async (
-    vpageIndex: number,
+    pageNum: number,
     canvas: HTMLCanvasElement
   ): Promise<boolean> => {
-    const vp = vpagesRef.current[vpageIndex - 1]
-    if (!pdfDoc || !vp) return false
-
-    const cacheKey = `${vp.physical}@${vp.offsetY}`
-
+    if (!pdfDoc) return false
     try {
       const ctx = canvas.getContext('2d')!
-      const cached = pageCacheRef.current.get(cacheKey)
+      const cached = pageCacheRef.current.get(pageNum)
 
       if (cached) {
         canvas.width = cached.width
@@ -134,42 +111,15 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         return true
       }
 
-      // 渲染物理页——但只截取对应的 Y 片段
-      const page = await pdfDoc.getPage(vp.physical)
-      const fullVp = page.getViewport({ scale })
-      const renderHeight = vp.height * scale
-
-      // 如果不需要裁剪，直接渲染
-      if (vp.offsetY === 0 && vp.height >= fullVp.height) {
-        canvas.width = Math.ceil(fullVp.width)
-        canvas.height = Math.ceil(fullVp.height)
-        await page.render({ canvasContext: ctx, viewport: fullVp }).promise
-      } else {
-        // 需要裁剪：渲染到离屏 canvas，再截取片段
-        const offscreen = document.createElement('canvas')
-        offscreen.width = Math.ceil(fullVp.width)
-        offscreen.height = Math.ceil(renderHeight)
-        const offCtx = offscreen.getContext('2d')!
-
-        // 用 transform 偏移视口来只渲染需要的片段
-        const segmentVp = page.getViewport({
-          scale,
-          offsetX: 0,
-          offsetY: -vp.offsetY,
-        })
-        // 画布只取片段高度
-        offscreen.width = Math.ceil(segmentVp.width)
-        offscreen.height = Math.ceil(renderHeight)
-        await page.render({ canvasContext: offCtx, viewport: segmentVp }).promise
-
-        canvas.width = offscreen.width
-        canvas.height = offscreen.height
-        ctx.drawImage(offscreen, 0, 0)
-      }
+      const page = await pdfDoc.getPage(pageNum)
+      const viewport = page.getViewport({ scale })
+      canvas.width = Math.ceil(viewport.width)
+      canvas.height = Math.ceil(viewport.height)
+      await page.render({ canvasContext: ctx, viewport }).promise
 
       // 存入缓存
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      pageCacheRef.current.set(cacheKey, imageData)
+      pageCacheRef.current.set(pageNum, imageData)
 
       return true
     } catch {
@@ -177,30 +127,23 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     }
   }, [pdfDoc, scale])
 
-  // ─── 预加载相邻虚拟页 ───
-  const preloadNeighbors = useCallback(async (vpageIndex: number) => {
-    if (!pdfDoc || vpagesRef.current.length < 2) return
-    const neighbors = [vpageIndex + 1, vpageIndex - 1].filter(
-      p => {
-        const vp = vpagesRef.current[p - 1]
-        if (!vp) return false
-        const key = `${vp.physical}@${vp.offsetY}`
-        return !pageCacheRef.current.has(key) && !preloadingRef.current.has(key)
-      }
+  // ─── 预加载相邻页 ───
+  const preloadNeighbors = useCallback(async (pageNum: number) => {
+    if (!pdfDoc || pdfDoc.numPages < 2) return
+    const neighbors = [pageNum + 1, pageNum - 1].filter(
+      p => p >= 1 && p <= pdfDoc.numPages && !pageCacheRef.current.has(p) && !preloadingRef.current.has(p)
     )
     for (const p of neighbors) {
-      const vp = vpagesRef.current[p - 1]
-      const key = `${vp.physical}@${vp.offsetY}`
-      preloadingRef.current.add(key)
+      preloadingRef.current.add(p)
       try {
         const offscreen = document.createElement('canvas')
         await renderToCanvas(p, offscreen)
       } catch { /* ok */ }
-      preloadingRef.current.delete(key)
+      preloadingRef.current.delete(p)
     }
   }, [pdfDoc, renderToCanvas])
 
-  // ─── 渲染当前虚拟页 ───
+  // ─── 渲染当前页 ───
   useEffect(() => {
     if (!pdfDoc || !mainCanvasRef.current) return
 
@@ -213,11 +156,28 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     setLoading(true)
     setShowJump(false)
 
-    renderToCanvas(currentPage, mainCanvasRef.current).then(() => {
+    // 超时保护：20 秒内没渲染完就报错
+    if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current)
+    renderTimeoutRef.current = setTimeout(() => {
       if (!cancelled) {
         setLoading(false)
-        preloadNeighbors(currentPage)
+        setError('页面渲染超时，请缩小显示比例后重试')
       }
+    }, 20000)
+
+    renderToCanvas(currentPage, mainCanvasRef.current).then((ok) => {
+      if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current)
+      if (!cancelled) {
+        if (ok) {
+          setLoading(false)
+          preloadNeighbors(currentPage)
+        } else {
+          setError('页面渲染失败，请刷新重试')
+        }
+      }
+    }).catch(() => {
+      if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current)
+      if (!cancelled) setError('页面渲染出错，请刷新重试')
     })
     return () => { cancelled = true }
   }, [pdfDoc, currentPage, renderToCanvas, preloadNeighbors])
@@ -462,6 +422,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             </svg>
           </button>
           <span className="text-xs text-gray-400 w-12 text-center tabular-nums font-medium">{Math.round(scale * 100)}%</span>
+          {autoScale && (
+            <span className="text-[10px] text-yellow-500 ml-0.5" title="因页面过长已自动缩小，可手动调整">ⓘ</span>
+          )}
           <button onClick={zoomIn} disabled={scale >= 3 || turning}
             className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all active:scale-90 disabled:opacity-20"
             title="放大">
@@ -479,13 +442,6 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
           </button>
         </div>
       </header>
-
-      {/* ─── 分页提示 ─── */}
-      {pageInfo && (
-        <div className="bg-blue-900/30 border-b border-blue-800/30 px-3 py-1 text-center">
-          <span className="text-xs text-blue-300">{pageInfo}</span>
-        </div>
-      )}
 
       {/* ─── PDF 画布 + 翻页动画 ─── */}
       <div ref={scrollRef}
@@ -560,4 +516,3 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     </div>
   )
 }
-
