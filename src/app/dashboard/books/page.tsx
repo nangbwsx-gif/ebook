@@ -73,6 +73,13 @@ export default function BooksPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-4">
+                  <a href={book.pdfUrl} download={`${book.title}.pdf`}
+                    className="px-3 py-1.5 text-xs text-green-400 hover:bg-green-900/30 rounded-lg transition flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    下载
+                  </a>
                   <Link href={`/book/${book.id}`} target="_blank"
                     className="px-3 py-1.5 text-xs text-blue-400 hover:bg-blue-900/30 rounded-lg transition">
                     预览
