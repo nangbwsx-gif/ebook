@@ -22,6 +22,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
   const [scrollMode, setScrollMode] = useState(false)       // 滚动模式
   const [hasTallPage, setHasTallPage] = useState(false)     // 是否有超长页
   const [scrollProgress, setScrollProgress] = useState(0)   // 滚动进度 0-100
+  const [scrollRenderZoom, setScrollRenderZoom] = useState(0) // 实际渲染缩放
 
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const nextCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -110,14 +111,15 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         const page = await pdfDoc.getPage(1)
         const fullVp = page.getViewport({ scale: 1 })
 
-        // 自动缩放：宽度适配容器，且总面积 ≤ 4MP（避免大画布卡死）
+        // 高质量渲染：宽度适配容器 ×1.5 倍，总面积 ≤ 12MP
         const containerW = scrollContainerRef.current?.clientWidth || 900
-        const fitScale = Math.max((containerW - 40) / fullVp.width, 0.2)
-        const areaLimit = 4_000_000
+        const fitScale = Math.max((containerW - 40) / fullVp.width * 1.5, 0.3)
+        const areaLimit = 12_000_000
         const areaScale = Math.sqrt(areaLimit / (fullVp.width * fullVp.height))
         const safeScale = Math.min(fitScale, areaScale, 1.5)
 
         const vp = page.getViewport({ scale: safeScale })
+        if (!cancelled) setScrollRenderZoom(safeScale)
         const canvas = scrollCanvasRef.current!
         canvas.width = Math.ceil(vp.width)
         canvas.height = Math.ceil(vp.height)
@@ -134,7 +136,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     }
     renderScroll()
     return () => { cancelled = true }
-  }, [pdfDoc, scrollMode, pdfUrl])
+  }, [pdfDoc, scrollMode, pdfUrl, scale])
 
   // ─── 滚动模式：监听滚动进度 ───
   useEffect(() => {
@@ -283,7 +285,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
 
   const zoomIn  = () => setScale(s => Math.min(3, s + 0.25))
   const zoomOut = () => setScale(s => Math.max(0.5, s - 0.25))
-  const resetView = () => { setCurrentPage(1); setScale(1.5) }
+  const resetView = () => { if (!scrollMode) setCurrentPage(1); setScale(1.5) }
 
   // ─── 点击翻页（仅翻页模式） ───
   const handleCanvasClick = (e: React.MouseEvent) => {
@@ -440,7 +442,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
             </svg>
           </button>
-          <span className="text-xs text-gray-400 w-12 text-center tabular-nums font-medium">{Math.round(scale * 100)}%</span>
+          <span className="text-xs text-gray-400 w-12 text-center tabular-nums font-medium">
+            {Math.round((scrollMode && scrollRenderZoom ? scrollRenderZoom : scale) * 100)}%
+          </span>
           <button onClick={zoomIn} disabled={scale >= 3}
             className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg active:scale-90 disabled:opacity-20" title="放大">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
