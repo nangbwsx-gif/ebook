@@ -476,28 +476,22 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             {!loading && !turning && (
               <>
                 <button onClick={goPrev} disabled={currentPage <= 1}
-                  className="absolute left-0 inset-y-0 z-20 flex items-center justify-start pl-1
+                  className="absolute left-0 inset-y-0 w-1/3 z-20 flex items-center justify-start pl-3
                             opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                            disabled:opacity-0 cursor-pointer group/btn"
+                            disabled:opacity-0 cursor-pointer"
                   title="上一页">
-                  <div className="w-10 h-20 rounded-r-xl bg-black/15 backdrop-blur-sm flex items-center justify-center
-                                group-hover/btn:bg-black/30 transition-colors">
-                    <svg className="w-5 h-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </div>
+                  <svg className="w-8 h-8 text-white/50 drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
                 </button>
                 <button onClick={goNext} disabled={currentPage >= totalPages}
-                  className="absolute right-0 inset-y-0 z-20 flex items-center justify-end pr-1
+                  className="absolute right-0 inset-y-0 w-1/3 z-20 flex items-center justify-end pr-3
                             opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                            disabled:opacity-0 cursor-pointer group/btn"
+                            disabled:opacity-0 cursor-pointer"
                   title="下一页">
-                  <div className="w-10 h-20 rounded-l-xl bg-black/15 backdrop-blur-sm flex items-center justify-center
-                                group-hover/btn:bg-black/30 transition-colors">
-                    <svg className="w-5 h-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
+                  <svg className="w-8 h-8 text-white/50 drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               </>
             )}
