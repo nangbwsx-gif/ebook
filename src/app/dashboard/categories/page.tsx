@@ -39,55 +39,55 @@ export default function CategoriesPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
-      <h2 className="text-lg font-bold text-white mb-1">分类管理</h2>
-      <p className="text-sm text-gray-500 mb-6">管理样册分类，方便在书橱中分组展示</p>
+      <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">分类管理</h2>
+      <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">管理样册分类，方便在书橱中分组展示</p>
 
-      {/* 新建 */}
       <div className="flex items-center gap-3 mb-6">
         <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') create() }}
           placeholder="新分类名称"
-          className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm
-                    placeholder-gray-600 focus:outline-none focus:border-blue-500 transition" />
+          className="flex-1 px-3 py-2.5 bg-white border border-gray-300 text-gray-900 placeholder-gray-400
+                    dark:bg-gray-900 dark:border-gray-700 dark:text-white dark:placeholder-gray-600
+                    rounded-lg text-sm focus:outline-none focus:border-blue-500 transition" />
         <button onClick={create}
           className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition shrink-0">
           + 创建
         </button>
       </div>
 
-      {/* 列表 */}
       {categories.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl py-12 text-center text-gray-500 text-sm">
+        <div className="bg-white border border-gray-200 dark:bg-gray-900 dark:border-gray-800 rounded-xl py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
           暂无分类，上传样册时输入分类名即可自动创建
         </div>
       ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="divide-y divide-gray-800">
+        <div className="bg-white border border-gray-200 dark:bg-gray-900 dark:border-gray-800 rounded-xl overflow-hidden">
+          <div className="divide-y divide-gray-200 dark:divide-gray-800">
             {categories.map(cat => (
               <div key={cat.id} className="px-5 py-3 flex items-center justify-between">
                 {editingId === cat.id ? (
                   <div className="flex items-center gap-2 flex-1">
                     <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                      className="px-2.5 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm flex-1
-                                focus:outline-none focus:border-blue-500"
+                      className="px-2.5 py-1.5 bg-gray-50 border border-gray-300 text-gray-900
+                                dark:bg-gray-800 dark:border-gray-600 dark:text-white
+                                rounded text-sm flex-1 focus:outline-none focus:border-blue-500"
                       autoFocus
                       onKeyDown={e => { if (e.key === 'Enter') rename(cat.id); if (e.key === 'Escape') setEditingId(null) }} />
                     <button onClick={() => rename(cat.id)}
-                      className="px-3 py-1.5 text-xs text-green-400 hover:bg-green-900/30 rounded transition">保存</button>
+                      className="px-3 py-1.5 text-xs text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded transition">保存</button>
                     <button onClick={() => setEditingId(null)}
-                      className="px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-700 rounded transition">取消</button>
+                      className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded transition">取消</button>
                   </div>
                 ) : (
                   <>
                     <div className="flex items-center gap-3">
-                      <span className="text-white text-sm">{cat.name}</span>
-                      <span className="text-xs text-gray-600">{cat._count.books} 本</span>
+                      <span className="text-gray-900 dark:text-white text-sm">{cat.name}</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-600">{cat._count.books} 本</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => { setEditingId(cat.id); setEditName(cat.name) }}
-                        className="px-2.5 py-1 text-xs text-blue-400 hover:bg-blue-900/30 rounded transition">重命名</button>
+                        className="px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded transition">重命名</button>
                       <button onClick={() => remove(cat.id, cat.name)}
-                        className="px-2.5 py-1 text-xs text-red-400 hover:bg-red-900/30 rounded transition">删除</button>
+                        className="px-2.5 py-1 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded transition">删除</button>
                     </div>
                   </>
                 )}

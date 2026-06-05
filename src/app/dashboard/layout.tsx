@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardProvider, { useDashboard } from '@/contexts/dashboard'
+import { useTheme } from '@/contexts/theme'
 
 function Sidebar() {
   const pathname = usePathname()
   const { bookcaseUrl } = useDashboard()
+  const { theme, toggle } = useTheme()
   const router = useRouter()
 
   const nav = [
@@ -18,15 +20,15 @@ function Sidebar() {
   ]
 
   const active = (h: string) => pathname === h
-    ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-500'
-    : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
+    ? 'bg-blue-50 text-blue-600 dark:bg-blue-600/20 dark:text-blue-400 border-l-2 border-blue-500'
+    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-400 dark:hover:text-white dark:hover:bg-white/5 border-l-2 border-transparent'
 
   return (
-    <aside className="w-56 shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
-      <div className="p-5 border-b border-gray-800">
+    <aside className="w-56 shrink-0 bg-white border-r border-gray-200 dark:bg-gray-900 dark:border-gray-800 flex flex-col">
+      <div className="p-5 border-b border-gray-200 dark:border-gray-800">
         <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg flex items-center justify-center text-white font-bold text-sm">E</div>
-          <span className="text-white font-semibold text-sm">电子样册</span>
+          <span className="text-gray-900 font-semibold text-sm dark:text-white">电子样册</span>
         </Link>
       </div>
       <nav className="flex-1 py-3 space-y-0.5">
@@ -40,16 +42,29 @@ function Sidebar() {
           </Link>
         ))}
       </nav>
-      <div className="p-4 border-t border-gray-800 space-y-2">
+      <div className="p-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
         <Link href={bookcaseUrl} target="_blank"
-          className="flex items-center justify-center gap-1.5 w-full px-3 py-2 text-xs text-blue-400 hover:bg-blue-900/20 rounded-lg transition">
+          className="flex items-center justify-center gap-1.5 w-full px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20 rounded-lg transition">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
           </svg>
           查看书橱
         </Link>
+        <button onClick={toggle}
+          className="w-full px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 rounded-lg transition flex items-center justify-center gap-1.5">
+          {theme === 'dark' ? (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ) : (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          )}
+          {theme === 'dark' ? '浅色模式' : '深色模式'}
+        </button>
         <button onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); router.push('/') }}
-          className="w-full px-3 py-2 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded-lg transition">
+          className="w-full px-3 py-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 rounded-lg transition">
           退出登录
         </button>
       </div>
@@ -64,19 +79,19 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => { setOrigin(window?.location?.origin || '') }, [])
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-12 bg-gray-900/80 border-b border-gray-800 flex items-center justify-between px-5 shrink-0">
-          <div className="flex items-center gap-2 text-sm text-gray-300">
+        <header className="h-12 bg-white/80 border-b border-gray-200 dark:bg-gray-900/80 dark:border-gray-800 flex items-center justify-between px-5 shrink-0">
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
             <span className="font-medium">管理后台</span>
-            <span className="text-gray-600">·</span>
-            <span className="text-gray-500">{user?.username}</span>
+            <span className="text-gray-400 dark:text-gray-600">·</span>
+            <span className="text-gray-500 dark:text-gray-400">{user?.username}</span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-600">
+          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-600">
             <span>{bookcaseUrl}</span>
             <button onClick={() => navigator.clipboard.writeText(`${origin}${bookcaseUrl}`)}
-              className="px-2 py-0.5 text-gray-500 hover:text-gray-300 bg-gray-800 hover:bg-gray-700 rounded transition">
+              className="px-2 py-0.5 text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-500 dark:hover:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 rounded transition">
               复制
             </button>
           </div>
