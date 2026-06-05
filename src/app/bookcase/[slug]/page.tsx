@@ -31,9 +31,14 @@ export default async function BookcasePage({ params }: { params: { slug: string 
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
   return (
-    <div className="bookshelf-container">
+    <div className="bookshelf-container bg-gray-950">
+      {/* 环境光标亮 */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-600/[0.04] rounded-full blur-3xl" />
+      </div>
       <Header showSlug={user.slug} />
-      <main className="max-w-7xl mx-auto px-4 pb-20">
+      <main className="max-w-7xl mx-auto px-6 pb-24 relative">
         <BookcaseContent books={books} categories={categories} />
       </main>
     </div>
