@@ -256,13 +256,15 @@ export default function PDFViewer({ pdfUrl, bookId }: PDFViewerProps) {
     prevLoadingRef.current = loading
   }, [loading, scrollMode])
 
-  // ─── 翻页 ───
+  // ─── 3D 翻页动画 ───
   const turnPage = useCallback(async (direction: 'next' | 'prev') => {
     if (turningRef.current || !pdfDoc || !clipWrapRef.current || !mainCanvasRef.current || !nextCanvasRef.current) return
     const target = direction === 'next' ? currentPage + 1 : currentPage - 1
     if (target < 1 || target > totalPages) return
     turningRef.current = true; setTurning(true)
     turnDirRef.current = direction
+
+    // 渲染目标页到下层画布
     await renderToCanvas(target, nextCanvasRef.current)
     if (!turningRef.current) {
       const m = mainCanvasRef.current!, n = nextCanvasRef.current!
@@ -271,23 +273,52 @@ export default function PDFViewer({ pdfUrl, bookId }: PDFViewerProps) {
       skipNextRenderRef.current = true; setTurning(false); setCurrentPage(target)
       return
     }
+
     const wrap = clipWrapRef.current
     const isNext = direction === 'next'
-    const sc = 'inset(0 0% 0 0)'
-    const ec = isNext ? 'inset(0 100% 0 0)' : 'inset(0 0 0 100%)'
-    wrap.style.transition = 'none'; wrap.style.clipPath = sc
+    const origin = isNext ? 'left' : 'right'
+    const angle = isNext ? -95 : 95
+
+    // 起始角度
+    wrap.style.transition = 'none'
+    wrap.style.transformOrigin = origin
+    wrap.style.transform = 'perspective(1200px) rotateY(0deg)'
     void wrap.offsetHeight
-    wrap.style.transition = 'clip-path 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
-    wrap.style.clipPath = ec
+
+    // 播放翻转
+    wrap.style.transition = 'transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1)'
+    wrap.style.transformOrigin = origin
+    wrap.style.transform = `perspective(1200px) rotateY(${angle}deg)`
+
+    // 折痕阴影（翻页过程中显示）
+    const shadow = document.createElement('div')
+    shadow.className = 'absolute inset-y-0 pointer-events-none z-15'
+    shadow.style[isNext ? 'left' : 'right'] = '0'
+    shadow.style.width = '60px'
+    shadow.style.background = isNext
+      ? 'linear-gradient(to right, rgba(0,0,0,0.15), rgba(0,0,0,0.35), transparent)'
+      : 'linear-gradient(to left, rgba(0,0,0,0.15), rgba(0,0,0,0.35), transparent)'
+    shadow.style.transition = 'opacity 0.15s'
+    shadow.style.opacity = '1'
+    wrap.parentElement?.appendChild(shadow)
+
     setTimeout(() => {
+      // 清除折痕
+      shadow.style.opacity = '0'
+      setTimeout(() => shadow.remove(), 200)
       if (!turningRef.current) return
+      // 复制目标页到主画布
       const m = mainCanvasRef.current!, n = nextCanvasRef.current!
       const c = m.getContext('2d')!; c.clearRect(0, 0, m.width, m.height)
       m.width = n.width; m.height = n.height; c.drawImage(n, 0, 0)
-      wrap.style.transition = 'none'; wrap.style.clipPath = sc
-      skipNextRenderRef.current = true; setTurning(false); setCurrentPage(target)
+      // 重置翻转状态
+      wrap.style.transition = 'none'
+      wrap.style.transform = 'none'
+      skipNextRenderRef.current = true
+      setTurning(false)
+      setCurrentPage(target)
       turningRef.current = false
-    }, 380)
+    }, 480)
   }, [pdfDoc, currentPage, totalPages, renderToCanvas])
 
   goNextRef.current = useCallback(() => turnPage('next'), [turnPage])
@@ -523,19 +554,20 @@ export default function PDFViewer({ pdfUrl, bookId }: PDFViewerProps) {
                 </button>
               </>
             )}
-            <div className="relative" style={{ display: 'grid' }}>
+            <div className="relative" style={{ display: 'grid', perspective: '1200px', perspectiveOrigin: 'center center' }}>
               <div className="row-start-1 col-start-1" style={{ gridArea: '1/1' }}>
-                <canvas ref={nextCanvasRef} className="shadow-2xl rounded-sm" style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
+                <canvas ref={nextCanvasRef} className="shadow-2xl rounded-sm"
+                  style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
               </div>
-              <div ref={clipWrapRef} className="row-start-1 col-start-1" style={{ gridArea: '1/1', clipPath: 'inset(0 0% 0 0)' }}>
-                <canvas ref={mainCanvasRef} className="shadow-2xl rounded-sm" style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
-                <div className="absolute bottom-0 right-0 w-16 h-16 pointer-events-none"
-                  style={{ background: 'linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.06) 100%)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}>
-                  <div className="absolute bottom-0 right-0 w-12 h-12"
-                    style={{ background: 'linear-gradient(315deg, transparent 40%, rgba(255,255,255,0.02) 100%)', clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }} />
-                </div>
-                <div className="absolute top-0 bottom-0 w-10 pointer-events-none z-10"
-                  style={{ right: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.08), transparent)' }} />
+              <div ref={clipWrapRef} className="row-start-1 col-start-1"
+                style={{
+                  gridArea: '1/1',
+                  transformStyle: 'preserve-3d',
+                  backfaceVisibility: 'hidden',
+                }}
+              >
+                <canvas ref={mainCanvasRef} className="shadow-2xl rounded-sm"
+                  style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
               </div>
             </div>
           </div>
