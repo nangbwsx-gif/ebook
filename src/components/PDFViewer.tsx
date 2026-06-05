@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface PDFViewerProps {
   pdfUrl: string
+  bookId: string
 }
 
 const TALL_PAGE_THRESHOLD = 850
 
-export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
+export default function PDFViewer({ pdfUrl, bookId }: PDFViewerProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.5)
@@ -75,16 +76,17 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         setTotalPages(doc.numPages)
         setPdfDoc(doc)
 
-        const bookId = pdfUrl.split('/').pop()?.replace('.pdf', '')
+        // 回写页数 + 生成封面（使用书籍 DB ID）
         if (bookId && doc.numPages > 0) {
-          fetch(`/api/books/${bookId}`, {
+          const id = bookId
+          fetch(`/api/books/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pages: doc.numPages }),
             credentials: 'include',
           }).then(() => {
             // 通知书橱页面刷新数据
-            try { sessionStorage.setItem('book_updated', bookId) } catch {}
+            try { sessionStorage.setItem('book_updated', id) } catch {}
           }).catch(() => {})
 
           // 生成封面缩略图（仅当有封面 canvas）
@@ -93,7 +95,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
               const canvas = mainCanvasRef.current
               if (!canvas) return
               const coverData = canvas.toDataURL('image/jpeg', 0.7)
-              fetch(`/api/books/${bookId}`, {
+              fetch(`/api/books/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ coverData }),

@@ -6,6 +6,10 @@ import Link from 'next/link'
 import { Metadata } from 'next'
 import { verifyToken } from '@/lib/token'
 
+interface PageProps {
+  params: { id: string }
+}
+
 const getBook = cache(async (id: string) => {
   return prisma.book.findUnique({
     where: { id },
@@ -13,12 +17,12 @@ const getBook = cache(async (id: string) => {
   })
 })
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const book = await getBook(params.id)
   return { title: book ? `${book.title} - 电子样册` : '样册未找到' }
 }
 
-export default async function BookPage({ params }: { params: { id: string } }) {
+export default async function BookPage({ params }: PageProps) {
   const book = await getBook(params.id)
   if (!book) {
     return (
@@ -61,7 +65,7 @@ export default async function BookPage({ params }: { params: { id: string } }) {
 
       {/* PDF 阅读器 */}
       <div className="flex-1 -mt-px">
-        <PDFViewer pdfUrl={book.pdfUrl} />
+        <PDFViewer pdfUrl={book.pdfUrl} bookId={book.id} />
       </div>
     </div>
   )
