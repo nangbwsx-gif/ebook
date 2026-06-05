@@ -1,10 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { useDashboard } from '@/contexts/dashboard'
 import Link from 'next/link'
 
 export default function BooksPage() {
   const { books, categories, refresh, loading } = useDashboard()
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameTitle, setRenameTitle] = useState('')
 
   if (loading) return <PageLoader />
 
@@ -14,11 +17,23 @@ export default function BooksPage() {
     refresh()
   }
 
+  async function handleRename(id: string) {
+    if (!renameTitle.trim()) return
+    const res = await fetch(`/api/books/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: renameTitle.trim() }),
+      credentials: 'include',
+    })
+    if (res.ok) { setRenamingId(null); setRenameTitle(''); refresh() }
+  }
+
   async function changeCategory(bookId: string, categoryId: string) {
     await fetch(`/api/books/${bookId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ categoryId: categoryId || null }),
+      credentials: 'include',
     })
     refresh()
   }
@@ -43,9 +58,11 @@ export default function BooksPage() {
             {books.map(book => (
               <div key={book.id} className="px-5 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition">
                 <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-14 bg-gray-100 dark:bg-gray-800 rounded flex items-center justify-center shrink-0 overflow-hidden">
+                  {/* 封面缩略 */}
+                  <div className="w-10 h-14 rounded flex items-center justify-center shrink-0 overflow-hidden
+                                bg-gray-100 dark:bg-gray-800">
                     {book.coverUrl ? (
-                      <img src={book.coverUrl} alt="" className="w-full h-full object-cover" />
+                      <img src={book.coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
                     ) : (
                       <svg className="w-5 h-5 text-gray-400 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -54,9 +71,30 @@ export default function BooksPage() {
                     )}
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">{book.title}</h3>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                      {book.pages}页 · {new Date(book.createdAt).toLocaleDateString('zh-CN')}
+                    {renamingId === book.id ? (
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={renameTitle} onChange={e => setRenameTitle(e.target.value)}
+                          className="px-2 py-1 bg-gray-50 border border-gray-300 text-gray-900 text-sm
+                                    dark:bg-gray-800 dark:border-gray-600 dark:text-white
+                                    rounded focus:outline-none focus:border-blue-500 w-48"
+                          autoFocus
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleRename(book.id)
+                            if (e.key === 'Escape') { setRenamingId(null); setRenameTitle('') }
+                          }} />
+                        <button onClick={() => handleRename(book.id)}
+                          className="px-2 py-1 text-xs text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded transition">保存</button>
+                        <button onClick={() => { setRenamingId(null); setRenameTitle('') }}
+                          className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded transition">取消</button>
+                      </div>
+                    ) : (
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">{book.title}</h3>
+                    )}
+                    {/* 页码 + 提示 */}
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex items-center gap-1">
+                      <PagesLabel pages={book.pages} />
+                      <span className="mx-1 text-gray-300 dark:text-gray-700">·</span>
+                      {new Date(book.createdAt).toLocaleDateString('zh-CN')}
                     </p>
                     <select
                       value={book.category?.id || ''}
@@ -79,6 +117,8 @@ export default function BooksPage() {
                   </a>
                   <Link href={`/book/${book.id}`} target="_blank"
                     className="px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition">预览</Link>
+                  <button onClick={() => { setRenamingId(book.id); setRenameTitle(book.title) }}
+                    className="px-3 py-1.5 text-xs text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:bg-yellow-900/30 rounded-lg transition">重命名</button>
                   <button onClick={() => handleDelete(book.id, book.title)}
                     className="px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition">删除</button>
                 </div>
@@ -89,6 +129,25 @@ export default function BooksPage() {
       )}
     </div>
   )
+}
+
+/** 页码标签：0页显示"页数待解析"，1页带提示 */
+function PagesLabel({ pages }: { pages: number }) {
+  if (pages <= 0) {
+    return (
+      <span className="text-amber-500 dark:text-amber-400" title="PDF 首次打开后将自动解析页数">
+        页数待解析
+      </span>
+    )
+  }
+  if (pages === 1) {
+    return (
+      <span title="此 PDF 仅含 1 页（可能为超长页，阅读器已自动适配滚动模式）">
+        1 页 <span className="text-gray-400 dark:text-gray-600 cursor-help">ⓘ</span>
+      </span>
+    )
+  }
+  return <span>{pages} 页</span>
 }
 
 function PageLoader() {

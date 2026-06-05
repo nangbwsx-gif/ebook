@@ -81,7 +81,23 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pages: doc.numPages }),
+            credentials: 'include',
           }).catch(() => {})
+
+          // 生成封面缩略图（仅当有封面 canvas）
+          setTimeout(async () => {
+            try {
+              const canvas = mainCanvasRef.current
+              if (!canvas) return
+              const coverData = canvas.toDataURL('image/jpeg', 0.7)
+              fetch(`/api/books/${bookId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ coverData }),
+                credentials: 'include',
+              }).catch(() => {})
+            } catch {}
+          }, 800)
         }
       } catch {
         if (!cancelled) { setLoading(false); setError('样册加载失败') }

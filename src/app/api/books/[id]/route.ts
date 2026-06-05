@@ -20,6 +20,20 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const data = await request.json()
+
+  // 仅更新页数：公开允许（来自 PDFViewer 首次渲染回写）
+  const isPagesOnly = Object.keys(data).length === 1 && data.pages !== undefined
+
+  if (isPagesOnly) {
+    await prisma.book.update({
+      where: { id: params.id },
+      data: { pages: data.pages },
+    })
+    return NextResponse.json({ success: true })
+  }
+
+  // 其他更新：需认证
   const user = await getCurrentUser(request)
   if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 })
 
@@ -27,8 +41,6 @@ export async function PATCH(
   if (!book || book.userId !== user.id) {
     return NextResponse.json({ error: '无权限' }, { status: 403 })
   }
-
-  const data = await request.json()
 
   // 更新封面图片
   if (data.coverData) {
@@ -43,7 +55,6 @@ export async function PATCH(
 
   const updateFields: Record<string, unknown> = {}
   if (data.title !== undefined) updateFields.title = data.title
-  if (data.description !== undefined) updateFields.description = data.description
   if (data.pages !== undefined) updateFields.pages = data.pages
   if (data.coverUrl !== undefined) updateFields.coverUrl = data.coverUrl
   if (data.categoryId !== undefined) updateFields.categoryId = data.categoryId
