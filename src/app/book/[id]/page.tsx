@@ -39,7 +39,7 @@ export default async function BookPage({ params }: { params: { id: string } }) {
     const payload = verifyToken(token)
     if (payload) isOwner = payload.id === book.userId
   }
-  const backUrl = isOwner ? '/dashboard' : `/bookcase/${book.user.slug}`
+  const backUrl = isOwner ? '/dashboard/books' : `/bookcase/${book.user.slug}`
 
   return (
     <div className="min-h-screen bg-[#1a1a2e] flex flex-col">

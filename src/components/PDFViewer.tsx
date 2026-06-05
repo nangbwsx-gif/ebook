@@ -82,6 +82,9 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pages: doc.numPages }),
             credentials: 'include',
+          }).then(() => {
+            // 通知书橱页面刷新数据
+            try { sessionStorage.setItem('book_updated', bookId) } catch {}
           }).catch(() => {})
 
           // 生成封面缩略图（仅当有封面 canvas）
