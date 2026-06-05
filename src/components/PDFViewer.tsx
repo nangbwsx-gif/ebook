@@ -91,17 +91,24 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
     return () => { cancelled = true }
   }, [pdfUrl])
 
-  // ─── 滚动模式：缩放渲染（真高清 + 缓存 + 防抖） ───
+  // ─── 滚动模式：缩放渲染（清晰 + 缓存 + 防抖 + 渲染锁） ───
+  const isRenderingRef = useRef(false)      // 渲染锁，防止并发渲染
+
   useEffect(() => {
     if (!pdfDoc || !scrollMode || !scrollCanvasRef.current) return
     if (pdfDoc.numPages < 1) return
+    if (isRenderingRef.current) return      // 渲染中，跳过
 
     // 防抖：快速连点只执行最后一次
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-    debounceTimerRef.current = setTimeout(() => doRender(), 200)
+    debounceTimerRef.current = setTimeout(() => {
+      isRenderingRef.current = true
+      doRender()
+    }, 250)
 
-    function doRender() {
-      let cancelled = false
+    let cancelled = false
+
+    async function doRender() {
       const cacheKey = scale.toFixed(2)
 
       // 检查缓存
@@ -114,54 +121,52 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
         canvas.height = cached.height
         ctx.putImageData(cached, 0, 0)
         setLoading(false)
+        isRenderingRef.current = false
         return
       }
 
       setLoading(true)
 
-      async function render() {
-        try {
-          const page = await pdfDoc.getPage(1)
-          const fullVp = page.getViewport({ scale: 1 })
+      try {
+        const page = await pdfDoc.getPage(1)
+        if (cancelled) { isRenderingRef.current = false; return }
+        const fullVp = page.getViewport({ scale: 1 })
 
-          // 宽适配 × scale，总面积 ≤ 12MP 安全上限
-          const fitScale = fullVp.width > 0
-            ? ((scrollContainerRef.current?.clientWidth || 900) - 40) / fullVp.width * scale
-            : scale
-          const areaLimit = Math.sqrt(12_000_000 / (fullVp.width * fullVp.height))
-          const renderScale = Math.max(Math.min(fitScale, areaLimit, scale + 0.3), 0.3)
+        // 渲染缩放：宽适配 + 总面积 ≤ 20MP（高清上限）
+        const containerW = scrollContainerRef.current?.clientWidth || 900
+        const fitScale = fullVp.width > 0 ? ((containerW - 40) / fullVp.width) * scale : scale
+        const areaLimit = Math.sqrt(20_000_000 / (fullVp.width * fullVp.height))
+        const renderScale = Math.max(Math.min(fitScale, areaLimit, scale + 0.5), 0.3)
 
-          const renderVp = page.getViewport({ scale: renderScale })
-          const canvas = scrollCanvasRef.current!
-          canvas.width = Math.ceil(renderVp.width)
-          canvas.height = Math.ceil(renderVp.height)
+        const renderVp = page.getViewport({ scale: renderScale })
+        const canvas = scrollCanvasRef.current!
+        canvas.width = Math.ceil(renderVp.width)
+        canvas.height = Math.ceil(renderVp.height)
 
-          await page.render({
-            canvasContext: canvas.getContext('2d')!,
-            viewport: renderVp,
-          }).promise
+        await page.render({
+          canvasContext: canvas.getContext('2d')!,
+          viewport: renderVp,
+        }).promise
 
-          if (!cancelled) {
-            // 缓存
-            const ctx = canvas.getContext('2d')!
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            zoomCacheRef.current.set(cacheKey, imageData)
-            currentZoomKeyRef.current = cacheKey
-            // 限制缓存大小
-            if (zoomCacheRef.current.size > 5) {
-              const firstKey = zoomCacheRef.current.keys().next().value
-              if (firstKey) zoomCacheRef.current.delete(firstKey)
-            }
-            setLoading(false)
+        if (!cancelled) {
+          const ctx = canvas.getContext('2d')!
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          zoomCacheRef.current.set(cacheKey, imageData)
+          currentZoomKeyRef.current = cacheKey
+          // 限制缓存大小
+          if (zoomCacheRef.current.size > 5) {
+            const firstKey = zoomCacheRef.current.keys().next().value
+            if (firstKey) zoomCacheRef.current.delete(firstKey)
           }
-        } catch {
-          if (!cancelled) setError('页面渲染失败')
+          setLoading(false)
         }
+      } catch {
+        if (!cancelled) setError('页面渲染失败')
       }
-      render()
+      isRenderingRef.current = false
     }
 
-    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current) }
+    return () => { cancelled = true; if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current) }
   }, [pdfDoc, scrollMode, scale, pdfUrl])
 
   // ─── 滚动模式：监听滚动进度 ───
