@@ -478,18 +478,20 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
                 <button onClick={goPrev} disabled={currentPage <= 1}
                   className="absolute left-0 inset-y-0 w-1/3 z-20 flex items-center justify-start pl-3
                             opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                            disabled:opacity-0 cursor-pointer"
+                            disabled:opacity-0 cursor-pointer
+                            bg-gradient-to-r from-black/15 to-transparent"
                   title="上一页">
-                  <svg className="w-8 h-8 text-white/50 drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <svg className="w-8 h-8 text-white/70 drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
                 <button onClick={goNext} disabled={currentPage >= totalPages}
                   className="absolute right-0 inset-y-0 w-1/3 z-20 flex items-center justify-end pr-3
                             opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                            disabled:opacity-0 cursor-pointer"
+                            disabled:opacity-0 cursor-pointer
+                            bg-gradient-to-l from-black/15 to-transparent"
                   title="下一页">
-                  <svg className="w-8 h-8 text-white/50 drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <svg className="w-8 h-8 text-white/70 drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
