@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import DashboardProvider, { useDashboard } from '@/contexts/dashboard'
@@ -58,6 +59,9 @@ function Sidebar() {
 
 function InnerLayout({ children }: { children: React.ReactNode }) {
   const { user, bookcaseUrl } = useDashboard()
+  const [origin, setOrigin] = useState('')
+
+  useEffect(() => { setOrigin(window?.location?.origin || '') }, [])
 
   return (
     <div className="min-h-screen bg-gray-950 flex">
@@ -71,7 +75,7 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-600">
             <span>{bookcaseUrl}</span>
-            <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}${bookcaseUrl}`)}
+            <button onClick={() => navigator.clipboard.writeText(`${origin}${bookcaseUrl}`)}
               className="px-2 py-0.5 text-gray-500 hover:text-gray-300 bg-gray-800 hover:bg-gray-700 rounded transition">
               复制
             </button>

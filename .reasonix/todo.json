@@ -1,0 +1,27 @@
+{"phases": [
+  {"title": "PDF 阅读器核心性能优化（PDFViewer.tsx）", "steps": [
+    {"title": "增加页面缓存（Map 缓存已渲染页面，翻回不重画）", "status": "completed"},
+    {"title": "预加载相邻页面（自动在后台渲染 page+1 / page-1）", "status": "completed"},
+    {"title": "修复加载失败永久卡死 bug（显示错误提示替代无限 loading）", "status": "completed"},
+    {"title": "翻页动画时不阻塞后续操作（可中断翻页）", "status": "completed"},
+    {"title": "键盘事件监听器性能优化（goNext/goPrev 改用 ref）", "status": "completed"}
+  ]},
+  {"title": "上传流程性能与安全加固（api/books/route.ts）", "steps": [
+    {"title": "添加文件大小限制（最大 200MB）", "status": "completed"},
+    {"title": "验证 PDF 文件魔数（检查 %PDF 文件头）", "status": "completed"},
+    {"title": "移除服务端 PDF 页数计数（改为客户端回写）", "status": "completed"}
+  ]},
+  {"title": "书橱页封面生成性能优化（PDFCover.tsx + 书橱页）", "steps": [
+    {"title": "消除 PDFCover N+1 PATCH 请求", "status": "completed"},
+    {"title": "上传时服务端生成封面 JPEG（sharp 库）", "status": "completed"}
+  ]},
+  {"title": "nginx 静态文件直连优化", "steps": [
+    {"title": "nginx 直接服务 PDF 文件（不走 Node.js proxy）", "status": "completed"},
+    {"title": "添加 Range 分块传输与缓存策略支持", "status": "completed"}
+  ]},
+  {"title": "部署验证", "steps": [
+    {"title": "本地构建测试", "status": "completed"},
+    {"title": "SSH 同步到服务器并重启 PM2 + nginx", "status": "completed"},
+    {"title": "线上验证（首页 200、PDF 分块传输 206、PM2 运行中）", "status": "completed"}
+  ]}
+]}

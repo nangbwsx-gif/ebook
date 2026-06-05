@@ -4,7 +4,12 @@
       "WebFetch(domain:book.yunzhan365.com)",
       "Bash(curl -s -L -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0.0.0 Safari/537.36\" \"https://book.yunzhan365.com/bookcase/fxyj/index.html\")",
       "Bash(curl *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "WebSearch",
+      "Bash(ping -c 2 -W 5 8.222.168.107)",
+      "Bash(ssh *)",
+      "Bash(git add *)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -70,14 +70,19 @@ export async function DELETE(
   try {
     const filePath = path.join(process.cwd(), 'public', book.pdfUrl)
     await unlink(filePath)
-  } catch { /* 文件可能不存在 */ }
+  } catch (e: any) {
+    // ENOENT = 文件不存在，可忽略；其他错误应记录
+    if (e?.code !== 'ENOENT') console.error('Failed to delete PDF file:', e)
+  }
 
   // 清理封面文件
   if (book.coverUrl) {
     try {
       const coverPath = path.join(process.cwd(), 'public', book.coverUrl)
       await unlink(coverPath)
-    } catch { /* 封面文件可能不存在 */ }
+    } catch (e: any) {
+      if (e?.code !== 'ENOENT') console.error('Failed to delete cover file:', e)
+    }
   }
 
   await prisma.book.delete({ where: { id: params.id } })

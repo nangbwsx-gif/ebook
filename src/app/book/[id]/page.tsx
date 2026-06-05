@@ -1,19 +1,25 @@
 import { prisma } from '@/lib/db'
 import { cookies } from 'next/headers'
+import { cache } from 'react'
 import PDFViewer from '@/components/PDFViewer'
 import Link from 'next/link'
 import { Metadata } from 'next'
+import { verifyToken } from '@/lib/token'
+
+const getBook = cache(async (id: string) => {
+  return prisma.book.findUnique({
+    where: { id },
+    include: { user: { select: { slug: true } } },
+  })
+})
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const book = await prisma.book.findUnique({ where: { id: params.id } })
+  const book = await getBook(params.id)
   return { title: book ? `${book.title} - 电子样册` : '样册未找到' }
 }
 
 export default async function BookPage({ params }: { params: { id: string } }) {
-  const book = await prisma.book.findUnique({
-    where: { id: params.id },
-    include: { user: { select: { slug: true } } },
-  })
+  const book = await getBook(params.id)
   if (!book) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -30,10 +36,8 @@ export default async function BookPage({ params }: { params: { id: string } }) {
   const token = cookieStore.get('admin_token')?.value
   let isOwner = false
   if (token) {
-    try {
-      const data = JSON.parse(Buffer.from(token, 'base64').toString())
-      isOwner = data.id === book.userId
-    } catch {}
+    const payload = verifyToken(token)
+    if (payload) isOwner = payload.id === book.userId
   }
   const backUrl = isOwner ? '/dashboard' : `/bookcase/${book.user.slug}`
 

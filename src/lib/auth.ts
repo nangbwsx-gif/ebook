@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { prisma } from './db'
+import { verifyToken, signToken, type TokenPayload } from './token'
 
 export interface AuthUser {
   id: string
@@ -12,23 +13,22 @@ export async function getCurrentUser(request: NextRequest): Promise<AuthUser | n
   const token = request.cookies.get('admin_token')?.value
   if (!token) return null
 
-  try {
-    const data = JSON.parse(Buffer.from(token, 'base64').toString())
-    const user = await prisma.user.findUnique({ where: { id: data.id } })
-    if (!user) return null
-    return {
-      id: user.id,
-      username: user.username,
-      slug: user.slug,
-      role: user.role,
-    }
-  } catch {
-    return null
+  const payload = verifyToken(token)
+  if (!payload) return null
+
+  const user = await prisma.user.findUnique({ where: { id: payload.id } })
+  if (!user) return null
+
+  return {
+    id: user.id,
+    username: user.username,
+    slug: user.slug,
+    role: user.role,
   }
 }
 
-export function setAuthCookie(response: Response, user: { id: string; username: string }) {
-  const token = Buffer.from(JSON.stringify({ id: user.id, username: user.username })).toString('base64')
+export function setAuthCookie(response: Response, user: TokenPayload) {
+  const token = signToken({ id: user.id, username: user.username })
   ;(response as any).cookies?.set?.('admin_token', token, {
     httpOnly: true,
     sameSite: 'lax',

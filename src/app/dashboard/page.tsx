@@ -1,9 +1,13 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useDashboard } from '@/contexts/dashboard'
 
 export default function DashboardOverview() {
   const { books, categories, bookcaseUrl, loading } = useDashboard()
+  const [origin, setOrigin] = useState('')
+
+  useEffect(() => { setOrigin(window.location.origin) }, [])
 
   if (loading) return <PageLoader />
 
@@ -25,10 +29,10 @@ export default function DashboardOverview() {
         <p className="text-sm text-gray-400 mb-1">你的书橱公开地址</p>
         <div className="flex items-center gap-3">
           <code className="text-blue-400 text-sm font-mono bg-gray-800 px-3 py-1.5 rounded-lg flex-1 truncate">
-            {typeof window !== 'undefined' ? window.location.origin : ''}{bookcaseUrl}
+            {origin}{bookcaseUrl}
           </code>
           <button
-            onClick={() => navigator.clipboard.writeText(`${window.location.origin}${bookcaseUrl}`)}
+            onClick={() => navigator.clipboard.writeText(`${origin}${bookcaseUrl}`)}
             className="px-4 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition shrink-0">
             复制链接
           </button>

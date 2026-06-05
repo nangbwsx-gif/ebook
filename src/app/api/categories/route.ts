@@ -32,8 +32,20 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 })
 
   const { name } = await request.json()
+  if (!name?.trim()) {
+    return NextResponse.json({ error: '分类名不能为空' }, { status: 400 })
+  }
+
+  // 检查重名
+  const existing = await prisma.category.findFirst({
+    where: { name: name.trim(), userId: user.id },
+  })
+  if (existing) {
+    return NextResponse.json({ error: '分类名已存在' }, { status: 400 })
+  }
+
   const category = await prisma.category.create({
-    data: { name, userId: user.id },
+    data: { name: name.trim(), userId: user.id },
   })
   return NextResponse.json(category)
 }

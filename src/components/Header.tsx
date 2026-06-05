@@ -8,11 +8,13 @@ export default function Header({ showSlug }: { showSlug?: string }) {
   const [user, setUser] = useState<{ username: string; slug: string } | null>(null)
 
   useEffect(() => {
+    // 书橱页不需要检查登录
+    if (showSlug) return
     fetch('/api/auth/check')
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setUser(data))
       .catch(() => setUser(null))
-  }, [])
+  }, [showSlug])
 
   return (
     <header className="bg-gray-950 border-b border-gray-800 sticky top-0 z-50">
