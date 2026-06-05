@@ -458,7 +458,7 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
               style={{ display: loading ? 'none' : 'block', width: '100%', height: 'auto' }} />
           </div>
         ) : (
-          <div className="relative my-4 inline-flex">
+          <div className="relative my-4 inline-flex group">
             {loading && !turning && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a2e]/80 z-20 rounded-sm">
                 <div className="flex flex-col items-center gap-3">
@@ -470,6 +470,36 @@ export default function PDFViewer({ pdfUrl }: PDFViewerProps) {
                   <span className="text-xs text-gray-500">加载中...</span>
                 </div>
               </div>
+            )}
+
+            {/* 左右翻页箭头 */}
+            {!loading && !turning && (
+              <>
+                <button onClick={goPrev} disabled={currentPage <= 1}
+                  className="absolute left-0 inset-y-0 z-20 flex items-center justify-start pl-1
+                            opacity-0 group-hover:opacity-100 transition-opacity duration-300
+                            disabled:opacity-0 cursor-pointer group/btn"
+                  title="上一页">
+                  <div className="w-10 h-20 rounded-r-xl bg-black/15 backdrop-blur-sm flex items-center justify-center
+                                group-hover/btn:bg-black/30 transition-colors">
+                    <svg className="w-5 h-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </div>
+                </button>
+                <button onClick={goNext} disabled={currentPage >= totalPages}
+                  className="absolute right-0 inset-y-0 z-20 flex items-center justify-end pr-1
+                            opacity-0 group-hover:opacity-100 transition-opacity duration-300
+                            disabled:opacity-0 cursor-pointer group/btn"
+                  title="下一页">
+                  <div className="w-10 h-20 rounded-l-xl bg-black/15 backdrop-blur-sm flex items-center justify-center
+                                group-hover/btn:bg-black/30 transition-colors">
+                    <svg className="w-5 h-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </button>
+              </>
             )}
             <div className="relative" style={{ display: 'grid' }}>
               <div className="row-start-1 col-start-1" style={{ gridArea: '1/1' }}>
